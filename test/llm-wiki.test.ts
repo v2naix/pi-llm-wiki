@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { captureUrl } from "../extensions/llm-wiki/lib/source-packet.js";
+import { captureFile, captureText, captureUrl } from "../extensions/llm-wiki/lib/source-packet.js";
 import { ensureVaultStructure, getVaultPaths } from "../extensions/llm-wiki/lib/utils.js";
 
 // ─── Helpers ────────────────────────────────────────────
@@ -235,6 +235,9 @@ describe("skill frontmatter validation", () => {
 // ─── Wiki Directory Structure Tests ─────────────────────
 
 describe("source packet capture", () => {
+  const html = "<html><head><title>Example Page</title></head><body>Hello</body></html>";
+  const pdfBytes = "%PDF-1.7\n1 0 obj\n<</Type/Catalog>>\nendobj\n";
+
   beforeEach(() => {
     tempDir = join(tmpdir(), `pi-llm-wiki-capture-${Date.now()}`);
     mkdirSync(tempDir, { recursive: true });
@@ -244,24 +247,33 @@ describe("source packet capture", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("should preserve the original artifact for URL captures and render clickable links", async () => {
-    const paths = getVaultPaths(join(tempDir, "wiki-root"));
-    ensureVaultStructure(paths);
-
-    const html = "<html><head><title>Example Page</title></head><body>Hello</body></html>";
-    const pi = {
+  /** Build a mock pi.exec that optionally handles curl -o file writes. */
+  function mockPi(stdout?: string, writeOriginal = true) {
+    return {
       exec: async (command: string, args: string[]) => {
         if (command === "sh") return { stdout: "no\n", stderr: "", code: 0 };
         if (command === "curl" && args.includes("-o")) {
-          const outputPath = args[args.indexOf("-o") + 1];
-          writeFileSync(outputPath, html, "utf-8");
+          if (writeOriginal) {
+            const outputPath = args[args.indexOf("-o") + 1];
+            writeFileSync(outputPath, stdout ?? html, "utf-8");
+          }
           return { stdout: "", stderr: "", code: 0 };
         }
-
-        if (command === "curl") return { stdout: html, stderr: "", code: 0 };
+        if (command === "curl") return { stdout: stdout ?? html, stderr: "", code: 0 };
         throw new Error(`Unexpected command: ${command}`);
       },
     };
+  }
+
+  function makePaths() {
+    const p = getVaultPaths(join(tempDir, `wiki-${Math.random().toString(36).slice(2)}`));
+    ensureVaultStructure(p);
+    return p;
+  }
+
+  it("should preserve the original artifact for URL captures and render clickable links", async () => {
+    const paths = makePaths();
+    const pi = mockPi();
 
     const url = "https://example.com/article";
     const result = await captureUrl(pi as never, paths, url);
@@ -274,6 +286,107 @@ describe("source packet capture", () => {
     // Clickable URL in source page
     const sourcePage = readFile(result.sourcePagePath);
     expect(sourcePage).toContain(`> _Original: [${url}](${url})_`);
+  });
+
+  it("should write PDF extraction failure message for .pdf URLs when MarkItDown is unavailable", async () => {
+    const paths = makePaths();
+    const pi = mockPi();
+
+    const url = "https://example.com/report.pdf";
+    const result = await captureUrl(pi as never, paths, url);
+
+    // Should NOT have written raw original for .pdf (no uvx)
+    expect(existsSync(join(result.packetPath, "original", "source.pdf"))).toBe(true);
+
+    // extracted.md should contain a failure message, not raw bytes
+    const extracted = readFile(join(result.packetPath, "extracted.md"));
+    expect(extracted).not.toContain("%PDF-");
+    expect(extracted).toContain("PDF content could not be converted");
+    expect(extracted).toContain(url);
+  });
+
+  it("should sniff %PDF- bytes from non-.pdf URLs and write a failure message instead", async () => {
+    const paths = makePaths();
+    // curl returns PDF bytes from a non-.pdf URL
+    const pi = mockPi(pdfBytes);
+
+    const url = "https://example.com/download?format=pdf";
+    const result = await captureUrl(pi as never, paths, url);
+
+    const extracted = readFile(join(result.packetPath, "extracted.md"));
+    expect(extracted).not.toContain("%PDF-");
+    expect(extracted).toContain("PDF content could not be converted");
+    expect(extracted).toContain(url);
+  });
+
+  it("should name original artifacts based on URL extension", async () => {
+    const cases: Array<{ url: string; expected: string }> = [
+      { url: "https://example.com/article.html", expected: "source.html" },
+      { url: "https://example.com/doc.pdf", expected: "source.pdf" },
+      { url: "https://example.com/notes.md", expected: "source.md" },
+      { url: "https://example.com/data.xml", expected: "source.xml" },
+      { url: "https://example.com/readme.txt", expected: "source.txt" },
+      { url: "https://example.com/page", expected: "source.html" },
+      { url: "https://example.com/page?format=pdf", expected: "source.html" },
+    ];
+
+    for (const { url, expected } of cases) {
+      const paths = makePaths();
+      const pi = mockPi();
+      const result = await captureUrl(pi as never, paths, url);
+      const originalFile = join(result.packetPath, "original", expected);
+      expect(existsSync(originalFile)).toBe(true);
+    }
+  });
+
+  it("should render source page without an Original: line for text captures", async () => {
+    const paths = makePaths();
+    const result = captureText(paths, "Some text content", "My Note");
+
+    const sourcePage = readFile(result.sourcePagePath);
+    expect(sourcePage).toContain("# My Note");
+    expect(sourcePage).not.toContain("Original:");
+    expect(sourcePage).toContain("_Auto-preview: Some text content_");
+  });
+
+  it("should truncate auto-preview to 500 characters", async () => {
+    const paths = makePaths();
+    const longText = "A".repeat(1000);
+    const result = captureText(paths, longText, "Long Note");
+
+    const sourcePage = readFile(result.sourcePagePath);
+    // Preview should be 500 chars + "..."
+    expect(sourcePage).toContain(`_Auto-preview: ${"A".repeat(500)}..._`);
+  });
+
+  it("should handle local PDF file capture failure message when MarkItDown is unavailable", async () => {
+    const paths = makePaths();
+    // Create a temporary PDF file
+    const pdfPath = join(tempDir, "test.pdf");
+    writeFileSync(pdfPath, pdfBytes, "utf-8");
+
+    const pi = mockPi();
+    const result = await captureFile(pi as never, paths, pdfPath);
+
+    const extracted = readFile(join(result.packetPath, "extracted.md"));
+    expect(extracted).not.toContain("%PDF-");
+    expect(extracted).toContain("PDF content could not be converted");
+  });
+
+  it("should copy local non-PDF file content to extracted.md", async () => {
+    const paths = makePaths();
+    const mdPath = join(tempDir, "notes.md");
+    writeFileSync(mdPath, "# My Notes\n\nHello world.", "utf-8");
+
+    const pi = mockPi();
+    const result = await captureFile(pi as never, paths, mdPath);
+
+    const extracted = readFile(join(result.packetPath, "extracted.md"));
+    expect(extracted).toContain("# My Notes");
+    expect(extracted).toContain("Hello world.");
+
+    // Original file should be preserved
+    expect(existsSync(join(result.packetPath, "original", "notes.md"))).toBe(true);
   });
 });
 
