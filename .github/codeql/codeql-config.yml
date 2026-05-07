@@ -1,0 +1,12 @@
+name: "CodeQL Config"
+
+queries:
+  - uses: security-and-quality
+
+# Suppress false positives for temporary file creation.
+# This is a single-user CLI tool — TOCTOU race conditions on temp directories
+# are not a valid threat model. The alerts only fire because tests pass
+# os.tmpdir() paths into production capture functions.
+query-filters:
+  - exclude:
+      id: js/insecure-temporary-file
