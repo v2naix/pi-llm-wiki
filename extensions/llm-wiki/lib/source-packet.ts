@@ -383,18 +383,27 @@ function xmlToMarkdown(xml: string): string {
   text = text.replace(/<!DOCTYPE[^>]*>\s*/gi, "");
 
   // Replace block-level tags with newlines
-  text = text.replace(/<\/(p|div|section|article|li|h\d|tr|blockquote|pre|br\s*\/?)>/gi, "\n");
+  text = text.replace(/<\/(p|div|section|article|li|h\d|tr|blockquote|pre)>/gi, "\n");
   text = text.replace(/<br\s*\/?>/gi, "\n");
 
-  // Replace remaining tags with nothing
-  text = text.replace(/<[^>]*>/g, "");
+  // Strip remaining tags — match < followed by tag name characters to >
+  // Using a loop to handle malformed/broken tags that lack a closing >
+  let prev = "";
+  while (prev !== text) {
+    prev = text;
+    text = text.replace(/<[a-zA-Z\/!?][^>]*>/g, "");
+  }
+  // Remove any stray < that didn't form a complete tag
+  text = text.replace(/</g, "");
 
-  // Decode common XML entities
-  text = text.replace(/&amp;/g, "&");
-  text = text.replace(/&lt;/g, "<");
-  text = text.replace(/&gt;/g, ">");
-  text = text.replace(/&quot;/g, '"');
-  text = text.replace(/&#\d+;/g, (m) => String.fromCodePoint(Number.parseInt(m.slice(2, -1))));
+  // Decode XML entities in a single pass to avoid double-unescaping
+  text = text.replace(/&(?:amp|lt|gt|quot|#\d+);/gi, (entity) => {
+    const map: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"' };
+    const lower = entity.toLowerCase();
+    if (map[lower]) return map[lower];
+    if (lower.startsWith("&#")) return String.fromCodePoint(Number.parseInt(entity.slice(2, -1)));
+    return entity;
+  });
 
   // Clean up excessive blank lines
   text = text.replace(/\n{3,}/g, "\n\n").trim();
