@@ -206,12 +206,20 @@ export async function captureFile(
   mkdirSync(join(packetPath, "original"), { recursive: true });
   mkdirSync(join(packetPath, "attachments"), { recursive: true });
 
-  const isPdf = filePath.toLowerCase().endsWith(".pdf");
+  const lowerPath = filePath.toLowerCase();
+  const isPdf = lowerPath.endsWith(".pdf");
+  const isXml = lowerPath.endsWith(".xml");
   const content = isPdf ? "" : readText(filePath);
   const fileName = filePath.split("/").pop() || "unknown";
 
-  // Try MarkItDown for PDFs.
   let extracted = content;
+
+  // Convert XML to markdown
+  if (isXml && content) {
+    extracted = xmlToMarkdown(content);
+  }
+
+  // Try MarkItDown for PDFs.
   if (isPdf) {
     const markitdown = await exec(
       pi,
@@ -363,12 +371,49 @@ status: skeleton
 `;
 }
 
+/** Basic XML to markdown conversion: strip tags while preserving text structure. */
+function xmlToMarkdown(xml: string): string {
+  // Extract title from first <title> or root element
+  let title = "";
+  const titleMatch = xml.match(/<title[^>]*>([^<]*)<\/title>/i);
+  if (titleMatch) title = titleMatch[1].trim();
+
+  // Strip XML declaration and doctype
+  let text = xml.replace(/<\?xml[^>]*\?>\s*/gi, "");
+  text = text.replace(/<!DOCTYPE[^>]*>\s*/gi, "");
+
+  // Replace block-level tags with newlines
+  text = text.replace(/<\/(p|div|section|article|li|h\d|tr|blockquote|pre|br\s*\/?)>/gi, "\n");
+  text = text.replace(/<br\s*\/?>/gi, "\n");
+
+  // Replace remaining tags with nothing
+  text = text.replace(/<[^>]*>/g, "");
+
+  // Decode common XML entities
+  text = text.replace(/&amp;/g, "&");
+  text = text.replace(/&lt;/g, "<");
+  text = text.replace(/&gt;/g, ">");
+  text = text.replace(/&quot;/g, '"');
+  text = text.replace(/&#\d+;/g, (m) => String.fromCodePoint(Number.parseInt(m.slice(2, -1))));
+
+  // Clean up excessive blank lines
+  text = text.replace(/\n{3,}/g, "\n\n").trim();
+
+  if (!text) return xml; // fallback: return raw if stripping produced nothing
+
+  const lines = [];
+  if (title) lines.push(`# ${title}\n`);
+  lines.push(text);
+  return lines.join("\n\n");
+}
+
 function guessFormat(filePath: string): string {
   const lower = filePath.toLowerCase();
   if (lower.endsWith(".pdf")) return "pdf";
   if (lower.endsWith(".md")) return "markdown";
   if (lower.endsWith(".txt")) return "text";
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "html";
+  if (lower.endsWith(".xml")) return "xml";
   if (lower.endsWith(".docx")) return "docx";
   return "file";
 }

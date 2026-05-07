@@ -388,6 +388,56 @@ describe("source packet capture", () => {
     // Original file should be preserved
     expect(existsSync(join(result.packetPath, "original", "notes.md"))).toBe(true);
   });
+
+  it("should convert XML files to readable markdown in extracted.md", async () => {
+    const paths = makePaths();
+    const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<document>
+  <title>Project Report</title>
+  <section>
+    <heading>Findings</heading>
+    <p>The analysis revealed several key insights.</p>
+    <list>
+      <item>First finding</item>
+      <item>Second finding</item>
+    </list>
+  </section>
+</document>`;
+    const xmlPath = join(tempDir, "report.xml");
+    writeFileSync(xmlPath, xmlContent, "utf-8");
+
+    const pi = mockPi();
+    const result = await captureFile(pi as never, paths, xmlPath);
+
+    const extracted = readFile(join(result.packetPath, "extracted.md"));
+    // Should have extracted title
+    expect(extracted).toContain("Project Report");
+    // Should have extracted text content
+    expect(extracted).toContain("The analysis revealed several key insights.");
+    expect(extracted).toContain("First finding");
+    expect(extracted).toContain("Second finding");
+    // Should NOT contain raw XML tags
+    expect(extracted).not.toContain("<?xml");
+    expect(extracted).not.toContain("<document>");
+    expect(extracted).not.toContain("</document>");
+
+    // Original file should be preserved
+    expect(existsSync(join(result.packetPath, "original", "report.xml"))).toBe(true);
+  });
+
+  it("should fall back to raw XML content when tag stripping produces nothing", async () => {
+    const paths = makePaths();
+    const xmlContent = `<?xml version="1.0"?><data><![CDATA[Hello]]></data>`;
+    const xmlPath = join(tempDir, "minimal.xml");
+    writeFileSync(xmlPath, xmlContent, "utf-8");
+
+    const pi = mockPi();
+    const result = await captureFile(pi as never, paths, xmlPath);
+
+    const extracted = readFile(join(result.packetPath, "extracted.md"));
+    // Should have the text content at minimum
+    expect(extracted).toContain("Hello");
+  });
 });
 
 describe("wiki directory structure", () => {
