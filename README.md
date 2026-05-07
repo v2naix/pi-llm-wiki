@@ -67,6 +67,45 @@ Read [docs/architecture.md](docs/architecture.md) for details.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Contributors
+
+[![Contributors](https://img.shields.io/github/contributors/zosmaai/pi-llm-wiki)](https://github.com/zosmaai/pi-llm-wiki/graphs/contributors)
+
+Thanks to everyone who has contributed to this project:
+
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%">
+        <a href="https://github.com/jfraser">
+          <img src="https://avatars.githubusercontent.com/u/165964?v=4" width="80" alt="jfraser">
+          <br /><sub><b>James Fraser</b></sub>
+        </a>
+        <br />
+        <a href="https://github.com/zosmaai/pi-llm-wiki/issues?q=author%3Ajfraser" title="Bug reports & PRs">🐛</a>
+      </td>
+    </tr>
+  </tbody>
+</table>
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+## Stargazers
+
+[![Stars](https://img.shields.io/github/stars/zosmaai/pi-llm-wiki?style=social)](https://github.com/zosmaai/pi-llm-wiki/stargazers)
+
+If you find this project useful, please give it a star on GitHub!
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ by <a href="https://github.com/zosmaai">zosmaai</a></sub>
+</div>
+
 ## License
 
 MIT
