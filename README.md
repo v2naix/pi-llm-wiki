@@ -53,6 +53,9 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | 🩺 **Mechanical linting** | Orphans, broken links, duplicate aliases, coverage gaps, stale captures |
 | 📊 **Dashboard** | `wiki_status` — counts, source states, recent activity |
 | 🤖 **Auto-update watch** | `wiki_watch` — schedule periodic discovery + ingest |
+| 🧠 **Auto-recall** | Wiki searched automatically before every turn — relevant pages injected into context |
+| 💾 **Auto-capture** | `wiki_retro` — save atomic insights from completed tasks with one call |
+| 🌐 **MCP Server** | Use with Claude Code, Cursor, Windsurf via stdio MCP transport |
 | 📝 **Obsidian-friendly** | Folder-qualified wikilinks, stable source-ID citations, compatible vault |
 | 🛡️ **Guardrails** | Blocks direct edits to raw sources and generated metadata |
 | 🔧 **Configurable PDF extraction** | MarkItDown timeout via `WIKI_MARKITDOWN_TIMEOUT_MS` env var |
@@ -66,6 +69,8 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 |------|-------------|
 | `wiki_bootstrap` | Initialize a new wiki vault with config, templates, schema, and metadata |
 | `wiki_capture_source` | Capture a URL, local file, or pasted text into an immutable source packet |
+| `wiki_recall` | 🔄 **Auto-called at turn start** — search wiki for task-relevant pages |
+| `wiki_retro` | Save atomic insights from completed tasks into the wiki |
 | `wiki_ingest` | Process uningested source packets into wiki pages (batch) |
 | `wiki_ensure_page` | Resolve or safely create entity / concept / synthesis / analysis pages |
 | `wiki_search` | Search the generated wiki registry |
@@ -244,6 +249,34 @@ raw/sources/SRC-YYYY-MM-DD-NNN/
 ```
 
 This preserves both the **original artifact** and a **normalized extracted view** for reading.
+
+---
+
+## MCP Server
+
+Use the wiki from **any MCP-compatible tool** — Claude Code, Cursor, Windsurf, and others.
+
+The package ships a standalone MCP server exposing 5 wiki tools over stdio:
+
+| Tool | Description |
+|------|-------------|
+| `wiki_recall` | Search wiki for task-relevant pages |
+| `wiki_search` | Full registry search |
+| `wiki_status` | Wiki stats (page counts, type breakdown) |
+| `wiki_retro` | Save atomic insights |
+| `wiki_capture_source` | Capture text as a source packet |
+
+### Usage
+
+```bash
+# Auto-discovered by pi:
+pi install npm:@zosmaai/pi-llm-wiki
+
+# Standalone with any MCP client:
+WIKI_ROOT=~/my-wiki node node_modules/@zosmaai/pi-llm-wiki/mcp/index.js
+```
+
+Set `WIKI_ROOT` to your wiki vault directory. If unset, the server auto-detects from the current working directory.
 
 ---
 
