@@ -1,7 +1,7 @@
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { rebuildMetadataLight } from "./metadata.js";
-import { isProtectedPath, resolveVaultRoot } from "./utils.js";
+import { isProtectedPath, resolveVaultPaths } from "./utils.js";
 
 /**
  * Guardrails and auto-rebuild hooks for the LLM Wiki extension.
@@ -15,8 +15,8 @@ export function installGuardrails(pi: ExtensionAPI): void {
   pi.on("tool_call", async (event) => {
     if (isToolCallEventType("write", event)) {
       const path = event.input.path as string;
-      const root = resolveVaultRoot(process.cwd());
-      const check = isProtectedPath(path, root);
+      const paths = resolveVaultPaths(process.cwd());
+      const check = isProtectedPath(path, paths);
       if (check.protected) {
         return { block: true, reason: check.reason };
       }
@@ -24,8 +24,8 @@ export function installGuardrails(pi: ExtensionAPI): void {
 
     if (isToolCallEventType("edit", event)) {
       const path = event.input.path as string;
-      const root = resolveVaultRoot(process.cwd());
-      const check = isProtectedPath(path, root);
+      const paths = resolveVaultPaths(process.cwd());
+      const check = isProtectedPath(path, paths);
       if (check.protected) {
         return { block: true, reason: check.reason };
       }
@@ -36,8 +36,8 @@ export function installGuardrails(pi: ExtensionAPI): void {
   pi.on("tool_result", async (event) => {
     if (event.toolName === "write" || event.toolName === "edit") {
       const path = event.input.path as string;
-      const root = resolveVaultRoot(process.cwd());
-      const wikiPath = `${root}/wiki/`;
+      const paths = resolveVaultPaths(process.cwd());
+      const wikiPath = `${paths.wiki}/`;
       if (path?.startsWith(wikiPath)) {
         pendingRebuild = true;
       }
@@ -49,17 +49,7 @@ export function installGuardrails(pi: ExtensionAPI): void {
     if (pendingRebuild) {
       pendingRebuild = false;
       try {
-        const root = resolveVaultRoot(process.cwd());
-        const paths = {
-          root,
-          raw: `${root}/raw`,
-          rawSources: `${root}/raw/sources`,
-          wiki: `${root}/wiki`,
-          meta: `${root}/meta`,
-          dotWiki: `${root}/.wiki`,
-          outputs: `${root}/outputs`,
-          discoveries: `${root}/.discoveries`,
-        };
+        const paths = resolveVaultPaths(process.cwd());
         rebuildMetadataLight(paths);
       } catch {
         // Silently fail — metadata rebuild is best-effort

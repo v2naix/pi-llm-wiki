@@ -3,13 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { appendEvent, rebuildMetadataLight } from "./metadata.js";
-import {
-  type VaultPaths,
-  fmtDate,
-  getVaultPaths,
-  nextSourceId,
-  resolveVaultRoot,
-} from "./utils.js";
+import { type VaultPaths, fmtDate, nextSourceId, resolveVaultPaths } from "./utils.js";
 
 // ─── Public API ────────────────────────────────────────
 
@@ -158,10 +152,9 @@ export function registerWikiRetro(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params) {
-      const root = resolveVaultRoot(process.cwd());
-      const paths = getVaultPaths(root);
+      const paths = resolveVaultPaths(process.cwd());
 
-      if (!existsSync(join(root, ".wiki", "config.json"))) {
+      if (!existsSync(join(paths.dotWiki, "config.json"))) {
         return {
           content: [
             {

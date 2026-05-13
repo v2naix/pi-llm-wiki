@@ -1,7 +1,7 @@
 ---
 type: source
 format: article # article | paper | note | video | podcast | slack | email
-raw_path: raw/articles/filename.md
+raw_path: .llm-wiki/raw/articles/filename.md
 ingested: YYYY-MM-DD
 topics:
   - topic-name
@@ -42,4 +42,4 @@ topics:
 
 ## Source
 
-- [raw/articles/filename.md](../raw/articles/filename.md)
+- [.llm-wiki/raw/articles/filename.md](../.llm-wiki/raw/articles/filename.md)

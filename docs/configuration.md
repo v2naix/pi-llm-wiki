@@ -1,6 +1,6 @@
 # Configuration
 
-Wiki configuration lives in `.wiki/config.json`.
+Wiki configuration lives in `.llm-wiki/config.json`.
 
 ## Modes
 

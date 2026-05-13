@@ -11,11 +11,11 @@ Show a quick overview of wiki health and statistics.
 
 ## Steps
 
-1. Count sources in `raw/` (recursive)
-2. Count pages in `wiki/` (by type: entities, concepts, sources, syntheses)
-3. Check `wiki/LOG.md` for last ingest, lint, and discover dates
+1. Count sources in `.llm-wiki/raw/` (recursive)
+2. Count pages in `.llm-wiki/wiki/` (by type: entities, concepts, sources, syntheses)
+3. Check `.llm-wiki/wiki/LOG.md` for last ingest, lint, and discover dates
 4. Check for orphan pages (zero inbound links)
-5. Read `.discoveries/gaps.json` for known gaps
+5. Read `.llm-wiki/.discoveries/gaps.json` for known gaps
 6. Report:
 
 ```

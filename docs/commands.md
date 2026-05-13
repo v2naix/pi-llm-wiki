@@ -36,7 +36,7 @@ The extension registers 10 tools the LLM can call directly:
 
 1. `wiki_capture_source(url="...")` — creates packet + skeleton
 2. `wiki_ingest()` — get batch of sources needing synthesis
-3. Read `raw/sources/SRC-*/extracted.md`
+3. Read `.llm-wiki/raw/sources/SRC-*/extracted.md`
 4. Update skeleton source page with summary, entities, concepts
 5. `wiki_ensure_page(type="entity", title="...")` for each entity
 6. Add `[[wikilinks]]` between related pages

@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildRegistry, rebuildMetadataLight } from "../extensions/llm-wiki/lib/metadata.js";
 import { formatRecallContext, searchWiki } from "../extensions/llm-wiki/lib/recall.js";
 import { captureFile, captureText, captureUrl } from "../extensions/llm-wiki/lib/source-packet.js";
-import { ensureVaultStructure, getVaultPaths } from "../extensions/llm-wiki/lib/utils.js";
+import {
+  detectVaultFormat,
+  ensureVaultStructure,
+  getLegacyVaultPaths,
+  getVaultPaths,
+  resolveVaultPaths,
+} from "../extensions/llm-wiki/lib/utils.js";
 
 // ─── Helpers ────────────────────────────────────────────
 
@@ -29,6 +35,7 @@ function createWikiRoot(): string {
   const dir = join(tempDir, `wiki-${Math.random().toString(36).slice(2)}`);
   mkdirSync(dir, { recursive: true });
 
+  const llmWiki = join(dir, ".llm-wiki");
   const dirs = [
     "raw/articles",
     "raw/papers",
@@ -42,7 +49,7 @@ function createWikiRoot(): string {
     "outputs",
     ".discoveries",
   ];
-  for (const d of dirs) mkdirSync(join(dir, d), { recursive: true });
+  for (const d of dirs) mkdirSync(join(llmWiki, d), { recursive: true });
 
   return dir;
 }
@@ -56,17 +63,19 @@ function createConfig(dir: string, overrides: Record<string, unknown> = {}) {
   const mode = config.wiki?.mode || "personal";
   const topic = config.wiki?.topic || "Test Topic";
   writeFileSync(
-    join(dir, "config.yaml"),
+    join(dir, ".llm-wiki", "config.yaml"),
     `# LLM Wiki Configuration\nwiki:\n  mode: ${mode}\n  topic: "${topic}"\n`,
   );
 }
 
 function createSourceFile(dir: string, name: string, content: string) {
-  writeFileSync(join(dir, "raw", "articles", name), content);
+  writeFileSync(join(dir, ".llm-wiki", "raw", "articles", name), content);
 }
 
 function createWikiPage(dir: string, subdir: string | "", name: string, content: string) {
-  const target = subdir ? join(dir, "wiki", subdir, name) : join(dir, "wiki", name);
+  const target = subdir
+    ? join(dir, ".llm-wiki", "wiki", subdir, name)
+    : join(dir, ".llm-wiki", "wiki", name);
   writeFileSync(target, content);
 }
 
@@ -526,32 +535,32 @@ describe("wiki directory structure", () => {
   });
 
   it("should have all required directories", () => {
-    expect(existsSync(join(wikiDir, "raw", "articles"))).toBe(true);
-    expect(existsSync(join(wikiDir, "raw", "papers"))).toBe(true);
-    expect(existsSync(join(wikiDir, "raw", "notes"))).toBe(true);
-    expect(existsSync(join(wikiDir, "wiki", "entities"))).toBe(true);
-    expect(existsSync(join(wikiDir, "wiki", "concepts"))).toBe(true);
-    expect(existsSync(join(wikiDir, "wiki", "sources"))).toBe(true);
-    expect(existsSync(join(wikiDir, "wiki", "syntheses"))).toBe(true);
-    expect(existsSync(join(wikiDir, "wiki", "changes"))).toBe(true);
-    expect(existsSync(join(wikiDir, "outputs"))).toBe(true);
-    expect(existsSync(join(wikiDir, ".discoveries"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "raw", "articles"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "raw", "papers"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "raw", "notes"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "entities"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "concepts"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "sources"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "syntheses"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "changes"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "outputs"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", ".discoveries"))).toBe(true);
   });
 
   it("should create source pages from ingested files", () => {
     createConfig(wikiDir);
     createSourceFile(wikiDir, "test-article.md", "# Test\nContent about AI.");
-    expect(existsSync(join(wikiDir, "raw", "articles", "test-article.md"))).toBe(true);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "raw", "articles", "test-article.md"))).toBe(true);
 
     createWikiPage(
       wikiDir,
       "sources",
       "test-article.md",
-      "---\ntype: source\nformat: article\nraw_path: raw/articles/test-article.md\ningested: 2026-04-27\ntopics: [ai]\n---\n\n# Test Article\n\n## Summary\nAI content.\n",
+      "---\ntype: source\nformat: article\nraw_path: .llm-wiki/raw/articles/test-article.md\ningested: 2026-04-27\ntopics: [ai]\n---\n\n# Test Article\n\n## Summary\nAI content.\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "sources", "test-article.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "sources", "test-article.md"));
     expect(content).toContain("type: source");
-    expect(content).toContain("raw_path: raw/articles/test-article.md");
+    expect(content).toContain("raw_path: .llm-wiki/raw/articles/test-article.md");
   });
 
   it("should create entity pages with correct format", () => {
@@ -559,9 +568,9 @@ describe("wiki directory structure", () => {
       wikiDir,
       "entities",
       "test-entity.md",
-      "---\ntype: entity\ncategory: person\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources: [raw/articles/test.md]\n---\n\n# Person\n\n## Links\n- [[related-concept]]\n\n## Sources\n- [test](../raw/articles/test.md)\n",
+      "---\ntype: entity\ncategory: person\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources: [.llm-wiki/raw/articles/test.md]\n---\n\n# Person\n\n## Links\n- [[related-concept]]\n\n## Sources\n- [test](../.llm-wiki/raw/articles/test.md)\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "entities", "test-entity.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "entities", "test-entity.md"));
     expect(content).toContain("type: entity");
     expect(content).toContain("category: person");
     expect(content).toContain("[[related-concept]]");
@@ -574,7 +583,7 @@ describe("wiki directory structure", () => {
       "test-concept.md",
       "---\ntype: concept\ndomain: engineering\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources: []\n---\n\n# Test Concept\n\n## Links\n- [[other-concept]]\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "concepts", "test-concept.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "concepts", "test-concept.md"));
     expect(content).toContain("type: concept");
     expect(content).toContain("domain: engineering");
     expect(content).toContain("[[other-concept]]");
@@ -587,7 +596,7 @@ describe("wiki directory structure", () => {
       "comparison.md",
       "---\ntype: synthesis\ntopic: comparison\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources_count: 2\n---\n\n# Comparison\n\n## Sources Used\n- [[source-1]]\n- [[source-2]]\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "syntheses", "comparison.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "syntheses", "comparison.md"));
     expect(content).toContain("type: synthesis");
     expect(content).toContain("sources_count: 2");
     expect(content).toContain("[[source-1]]");
@@ -600,13 +609,16 @@ describe("wiki directory structure", () => {
       "INDEX.md",
       "# Wiki Index\n\n## Entities\n- [test](entities/test.md)\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "INDEX.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "INDEX.md"));
     expect(content).toContain("test");
   });
 
   it("should append to LOG.md", () => {
-    writeFileSync(join(wikiDir, "wiki", "LOG.md"), "## [2026-04-27] ingest | 3 pages\n");
-    const content = readFile(join(wikiDir, "wiki", "LOG.md"));
+    writeFileSync(
+      join(wikiDir, ".llm-wiki", "wiki", "LOG.md"),
+      "## [2026-04-27] ingest | 3 pages\n",
+    );
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "LOG.md"));
     expect(content).toContain("ingest");
     expect(content).toContain("3 pages");
   });
@@ -618,7 +630,7 @@ describe("wiki directory structure", () => {
       "conflict.md",
       "---\ntype: concept\ndomain: ai\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources: [a.md, b.md]\n---\n\n> ⚠️ **Contradiction:** A claims X but B claims Y.\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "concepts", "conflict.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "concepts", "conflict.md"));
     expect(content).toContain("Contradiction:");
   });
 });
@@ -645,7 +657,7 @@ describe("cross-reference integrity", () => {
       "orphan.md",
       "---\ntype: entity\ncategory: person\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources: []\n---\n# Orphan\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "entities", "orphan.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "entities", "orphan.md"));
     expect(content).not.toContain("[[orphan");
   });
 
@@ -656,11 +668,15 @@ describe("cross-reference integrity", () => {
       "main.md",
       "---\ntype: concept\ndomain: ai\ncreated: 2026-04-27\nupdated: 2026-04-27\nsources: []\n---\n\n# Main\n[[missing-page]] and [[another-missing]]\n",
     );
-    const content = readFile(join(wikiDir, "wiki", "concepts", "main.md"));
+    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "concepts", "main.md"));
     expect(content).toContain("[[missing-page]]");
     expect(content).toContain("[[another-missing]]");
-    expect(existsSync(join(wikiDir, "wiki", "entities", "missing-page.md"))).toBe(false);
-    expect(existsSync(join(wikiDir, "wiki", "concepts", "missing-page.md"))).toBe(false);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "entities", "missing-page.md"))).toBe(
+      false,
+    );
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "concepts", "missing-page.md"))).toBe(
+      false,
+    );
   });
 });
 
@@ -681,19 +697,19 @@ describe("configuration", () => {
 
   it("should accept personal mode config", () => {
     createConfig(wikiDir, { wiki: { mode: "personal", topic: "Learning" } });
-    const config = readFile(join(wikiDir, "config.yaml"));
+    const config = readFile(join(wikiDir, ".llm-wiki", "config.yaml"));
     expect(config).toContain("mode: personal");
   });
 
   it("should accept company mode config", () => {
     createConfig(wikiDir, { wiki: { mode: "company", topic: "Competitors" } });
-    const config = readFile(join(wikiDir, "config.yaml"));
+    const config = readFile(join(wikiDir, ".llm-wiki", "config.yaml"));
     expect(config).toContain("mode: company");
   });
 
   it("should support company mode with change detection pages", () => {
     createConfig(wikiDir, { wiki: { mode: "company", topic: "Market" }, change_detection: true });
-    const config = readFile(join(wikiDir, "config.yaml"));
+    const config = readFile(join(wikiDir, ".llm-wiki", "config.yaml"));
     expect(config).toContain("mode: company");
 
     createWikiPage(
@@ -702,26 +718,122 @@ describe("configuration", () => {
       "competitor-2026-04-27.md",
       "---\ntype: change\nentity: competitor\ndetected: 2026-04-27\n---\n\n# Change\nPricing changed from $99 to $149.\n",
     );
-    expect(existsSync(join(wikiDir, "wiki", "changes", "competitor-2026-04-27.md"))).toBe(true);
-    const content = readFile(join(wikiDir, "wiki", "changes", "competitor-2026-04-27.md"));
+    expect(
+      existsSync(join(wikiDir, ".llm-wiki", "wiki", "changes", "competitor-2026-04-27.md")),
+    ).toBe(true);
+    const content = readFile(
+      join(wikiDir, ".llm-wiki", "wiki", "changes", "competitor-2026-04-27.md"),
+    );
     expect(content).toContain("type: change");
     expect(content).toContain("Pricing changed");
   });
 
   it("should track discovery history", () => {
-    const history = { processed: [{ path: "raw/articles/a.md", ingested: "2026-04-27" }] };
-    writeFileSync(join(wikiDir, ".discoveries", "history.json"), JSON.stringify(history));
-    const content = JSON.parse(readFile(join(wikiDir, ".discoveries", "history.json")));
+    const history = {
+      processed: [{ path: ".llm-wiki/raw/articles/a.md", ingested: "2026-04-27" }],
+    };
+    writeFileSync(
+      join(wikiDir, ".llm-wiki", ".discoveries", "history.json"),
+      JSON.stringify(history),
+    );
+    const content = JSON.parse(
+      readFile(join(wikiDir, ".llm-wiki", ".discoveries", "history.json")),
+    );
     expect(content.processed).toHaveLength(1);
-    expect(content.processed[0].path).toBe("raw/articles/a.md");
+    expect(content.processed[0].path).toBe(".llm-wiki/raw/articles/a.md");
   });
 
   it("should track knowledge gaps", () => {
     const gaps = { gaps: [{ topic: "reinforcement learning", priority: "high" }] };
-    writeFileSync(join(wikiDir, ".discoveries", "gaps.json"), JSON.stringify(gaps));
-    const content = JSON.parse(readFile(join(wikiDir, ".discoveries", "gaps.json")));
+    writeFileSync(join(wikiDir, ".llm-wiki", ".discoveries", "gaps.json"), JSON.stringify(gaps));
+    const content = JSON.parse(readFile(join(wikiDir, ".llm-wiki", ".discoveries", "gaps.json")));
     expect(content.gaps).toHaveLength(1);
     expect(content.gaps[0].priority).toBe("high");
+  });
+});
+
+// ─── Backward Compatibility Tests ──────────────────────
+
+describe("backward compatibility", () => {
+  let wikiDir: string;
+
+  beforeEach(() => {
+    tempDir = join(tmpdir(), `pi-llm-wiki-bc-${Date.now()}`);
+    mkdirSync(tempDir, { recursive: true });
+    wikiDir = createWikiRoot();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("should detect new-format vault by .llm-wiki/config.json", () => {
+    const configDir = join(wikiDir, ".llm-wiki");
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ topic: "Test", mode: "personal" }),
+    );
+    expect(detectVaultFormat(wikiDir)).toBe("new");
+  });
+
+  it("should detect legacy-format vault by .wiki/config.json", () => {
+    const oldDir = join(wikiDir, ".wiki");
+    mkdirSync(oldDir, { recursive: true });
+    writeFileSync(
+      join(oldDir, "config.json"),
+      JSON.stringify({ topic: "Legacy", mode: "personal" }),
+    );
+    expect(detectVaultFormat(wikiDir)).toBe("legacy");
+  });
+
+  it("should resolve paths for legacy vaults via getLegacyVaultPaths", () => {
+    const oldDir = join(wikiDir, ".wiki");
+    mkdirSync(oldDir, { recursive: true });
+    writeFileSync(
+      join(oldDir, "config.json"),
+      JSON.stringify({ topic: "Legacy", mode: "personal" }),
+    );
+
+    // Create some legacy-style content
+    mkdirSync(join(wikiDir, "raw", "sources"), { recursive: true });
+    mkdirSync(join(wikiDir, "wiki", "concepts"), { recursive: true });
+    mkdirSync(join(wikiDir, "meta"), { recursive: true });
+
+    const paths = getLegacyVaultPaths(wikiDir);
+    expect(paths.raw).toBe(join(wikiDir, "raw"));
+    expect(paths.wiki).toBe(join(wikiDir, "wiki"));
+    expect(paths.meta).toBe(join(wikiDir, "meta"));
+    expect(paths.rawSources).toBe(join(wikiDir, "raw", "sources"));
+    expect(paths.dotWiki).toBe(join(wikiDir, ".wiki"));
+
+    // Verify the content is at the old paths
+    expect(existsSync(join(wikiDir, "raw", "sources"))).toBe(true);
+    expect(existsSync(join(wikiDir, "wiki", "concepts"))).toBe(true);
+  });
+
+  it("should auto-detect legacy vault via resolveVaultPaths", () => {
+    const oldDir = join(wikiDir, ".wiki");
+    mkdirSync(oldDir, { recursive: true });
+    writeFileSync(
+      join(oldDir, "config.json"),
+      JSON.stringify({ topic: "Legacy", mode: "personal" }),
+    );
+
+    mkdirSync(join(wikiDir, "raw", "sources"), { recursive: true });
+    mkdirSync(join(wikiDir, "wiki", "concepts"), { recursive: true });
+
+    const paths = resolveVaultPaths(wikiDir);
+
+    // Should detect legacy format and return old paths
+    expect(paths.raw).toBe(join(wikiDir, "raw"));
+    expect(paths.wiki).toBe(join(wikiDir, "wiki"));
+    // But resolveVaultRoot should still find the vault
+    expect(paths.dotWiki).toBe(join(wikiDir, ".wiki"));
+  });
+
+  it("should detect no vault", () => {
+    // Directory with no sentinel files
+    expect(detectVaultFormat(wikiDir)).toBe("none");
   });
 });
 
@@ -750,7 +862,7 @@ describe("wiki recall", () => {
   ) {
     const folder = id.includes("/") ? id.split("/")[0] : "concepts";
     const name = id.includes("/") ? id.split("/").pop()! : id;
-    const pagePath = join(wikiDir, "wiki", folder, `${name}.md`);
+    const pagePath = join(wikiDir, ".llm-wiki", "wiki", folder, `${name}.md`);
     const relId = `${folder}/${name}`;
 
     writeFileSync(
@@ -895,10 +1007,10 @@ describe("wiki retro", () => {
     const paths = getVaultPaths(wikiDir);
     ensureVaultStructure(paths);
     // Create minimal vault marker
-    const dotWiki = join(wikiDir, ".wiki");
-    mkdirSync(dotWiki, { recursive: true });
+    const llmWiki = join(wikiDir, ".llm-wiki");
+    mkdirSync(llmWiki, { recursive: true });
     writeFileSync(
-      join(dotWiki, "config.json"),
+      join(llmWiki, "config.json"),
       JSON.stringify({ topic: "Test", mode: "personal" }),
     );
   });
@@ -920,8 +1032,8 @@ describe("wiki retro", () => {
     );
 
     expect(result.sourceId).toMatch(/^SRC-/);
-    expect(result.packetPath).toContain("raw/sources/");
-    expect(result.sourcePagePath).toContain("wiki/sources/");
+    expect(result.packetPath).toContain(".llm-wiki/raw/sources/");
+    expect(result.sourcePagePath).toContain(".llm-wiki/wiki/sources/");
 
     // Manifest exists
     const manifest = JSON.parse(readFile(join(result.packetPath, "manifest.json")));

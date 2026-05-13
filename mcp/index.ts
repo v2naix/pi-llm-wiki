@@ -22,33 +22,72 @@ import * as z from "zod/v4";
 
 interface VaultPaths {
   root: string;
+  raw: string;
   rawSources: string;
   wiki: string;
   meta: string;
+  dotWiki: string;
+  outputs: string;
+  discoveries: string;
+}
+
+/** Detect vault format at a directory. */
+function detectFormat(dir: string): "new" | "legacy" | "none" {
+  if (existsSync(join(dir, ".llm-wiki", "config.json"))) return "new";
+  if (existsSync(join(dir, ".wiki", "config.json"))) return "legacy";
+  return "none";
 }
 
 function resolveVaultRoot(cwd: string): string | null {
-  if (existsSync(join(cwd, ".wiki", "config.json"))) return cwd;
+  // Check cwd first
+  if (detectFormat(cwd) !== "none") return cwd;
+
+  // Walk up
   const parts = cwd.split("/");
   for (let i = parts.length - 1; i >= 0; i--) {
     const dir = parts.slice(0, i + 1).join("/") || "/";
-    if (existsSync(join(dir, ".wiki", "config.json"))) return dir;
+    if (detectFormat(dir) !== "none") return dir;
   }
   return null;
 }
 
 function getPaths(): VaultPaths {
-  const root = process.env.WIKI_ROOT || resolveVaultRoot(process.cwd()) || process.cwd();
+  const detectedRoot = resolveVaultRoot(process.cwd());
+  const root = process.env.WIKI_ROOT || detectedRoot || process.cwd();
+  const format = process.env.WIKI_ROOT
+    ? detectFormat(root) // Use format detection even with explicit WIKI_ROOT
+    : detectedRoot
+      ? detectFormat(root)
+      : "none";
+
+  if (format === "legacy") {
+    return {
+      root,
+      raw: join(root, "raw"),
+      rawSources: join(root, "raw", "sources"),
+      wiki: join(root, "wiki"),
+      meta: join(root, "meta"),
+      dotWiki: join(root, ".wiki"),
+      outputs: join(root, "outputs"),
+      discoveries: join(root, ".discoveries"),
+    };
+  }
+
   return {
     root,
-    rawSources: join(root, "raw", "sources"),
-    wiki: join(root, "wiki"),
-    meta: join(root, "meta"),
+    raw: join(root, ".llm-wiki", "raw"),
+    rawSources: join(root, ".llm-wiki", "raw", "sources"),
+    wiki: join(root, ".llm-wiki", "wiki"),
+    meta: join(root, ".llm-wiki", "meta"),
+    dotWiki: join(root, ".llm-wiki"),
+    outputs: join(root, ".llm-wiki", "outputs"),
+    discoveries: join(root, ".llm-wiki", ".discoveries"),
   };
 }
 
 function hasVault(): boolean {
-  return existsSync(join(getPaths().root, ".wiki", "config.json"));
+  const paths = getPaths();
+  return existsSync(join(paths.dotWiki, "config.json"));
 }
 
 // ─── Helpers ────────────────────────────────────────────
@@ -259,7 +298,7 @@ server.registerTool(
       pages: {},
     });
 
-    const config = readJson<Record<string, unknown>>(join(paths.root, ".wiki", "config.json"), {});
+    const config = readJson<Record<string, unknown>>(join(paths.dotWiki, "config.json"), {});
 
     const byType: Record<string, number> = {};
     for (const entry of Object.values(registry.pages)) {
@@ -331,14 +370,7 @@ server.registerTool(
       ) => { sourceId: string; packetPath: string; sourcePagePath: string };
     };
 
-    const vaultPaths = {
-      ...getPaths(),
-      raw: join(getPaths().root, "raw"),
-      dotWiki: join(getPaths().root, ".wiki"),
-      outputs: join(getPaths().root, "outputs"),
-      discoveries: join(getPaths().root, ".discoveries"),
-    };
-
+    const vaultPaths = getPaths();
     const result = saveInsight(vaultPaths, slug, title, body, category);
 
     return {
@@ -378,18 +410,10 @@ server.registerTool(
       };
     }
 
-    const vaultPaths = {
-      ...getPaths(),
-      raw: join(getPaths().root, "raw"),
-      dotWiki: join(getPaths().root, ".wiki"),
-      outputs: join(getPaths().root, "outputs"),
-      discoveries: join(getPaths().root, ".discoveries"),
-    };
-
+    const vaultPaths = getPaths();
     let result: { sourceId: string };
 
     if (urlParam) {
-      // For MCP, use simple curl-based capture
       const { captureUrl } = (await import("../extensions/llm-wiki/lib/source-packet.js")) as {
         captureUrl: (
           pi: never,

@@ -16,7 +16,7 @@ import {
   registerWikiStatus,
   registerWikiWatch,
 } from "./lib/tools.js";
-import { getVaultPaths, resolveVaultRoot } from "./lib/utils.js";
+import { resolveVaultPaths } from "./lib/utils.js";
 
 /**
  * @zosmaai/pi-llm-wiki — LLM Wiki extension for Pi
@@ -58,12 +58,11 @@ export default function (pi: ExtensionAPI) {
   // Before each agent turn, search the wiki for pages relevant
   // to the user's prompt and inject them as system context.
   pi.on("before_agent_start", async (event, _ctx) => {
-    const root = resolveVaultRoot(process.cwd());
-    if (!existsSync(join(root, ".wiki", "config.json"))) {
+    const paths = resolveVaultPaths(process.cwd());
+    if (!existsSync(join(paths.dotWiki, "config.json"))) {
       return; // No wiki vault — nothing to recall
     }
 
-    const paths = getVaultPaths(root);
     const prompt = event.prompt || "";
     if (!prompt.trim()) return;
 

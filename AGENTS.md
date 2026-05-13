@@ -32,8 +32,8 @@ Instructions for AI agents working on this codebase.
 - Use `node:fs/promises` for async file I/O, not sync
 - Prefer small, pure functions in `lib/`
 - Extension tools must have: name, label, description, promptSnippet, promptGuidelines, parameters (TypeBox), execute
-- Guardrails block `raw/**` and `meta/**` edits at the tool_call hook level
-- Metadata auto-rebuilds on `turn_end` after `wiki/**` edits
+- Guardrails block `.llm-wiki/raw/**` and `.llm-wiki/meta/**` edits at the tool_call hook level
+- Metadata auto-rebuilds on `turn_end` after `.llm-wiki/wiki/**` edits
 - Source IDs: `SRC-YYYY-MM-DD-NNN`
 - Page filenames: `kebab-case.md`
 - Wikilinks: folder-qualified, e.g. `[[concepts/retrieval-augmented-generation]]`
