@@ -43,7 +43,9 @@ function moveContents(src, dest, name) {
       renameSync(join(src, entry), join(dest, entry));
     }
     // Remove empty source directory
-    try { rmSync(src); } catch {}
+    try {
+      rmSync(src);
+    } catch {}
   }
 }
 
@@ -67,9 +69,7 @@ function moveDir(src, dest, name) {
 
 async function main() {
   // Determine root directory
-  const root = process.argv[2]
-    ? join(process.cwd(), process.argv[2])
-    : process.cwd();
+  const root = process.argv[2] ? join(process.cwd(), process.argv[2]) : process.cwd();
 
   console.log(`\n🔍 Scanning for legacy wiki at: ${root}\n`);
 
@@ -97,13 +97,48 @@ async function main() {
 
   // Migration plan
   const moves = [
-    { src: join(root, ".wiki", "config.json"), dest: join(root, ".llm-wiki", "config.json"), type: "file", name: "config" },
-    { src: join(root, ".wiki", "templates"), dest: join(root, ".llm-wiki", "templates"), type: "dir", name: "templates" },
-    { src: join(root, "raw"), dest: join(root, ".llm-wiki", "raw"), type: "dir", name: "raw sources" },
-    { src: join(root, "wiki"), dest: join(root, ".llm-wiki", "wiki"), type: "dir", name: "wiki pages" },
-    { src: join(root, "meta"), dest: join(root, ".llm-wiki", "meta"), type: "dir", name: "metadata" },
-    { src: join(root, "outputs"), dest: join(root, ".llm-wiki", "outputs"), type: "dir", name: "outputs" },
-    { src: join(root, ".discoveries"), dest: join(root, ".llm-wiki", ".discoveries"), type: "dir", name: "discovery tracking" },
+    {
+      src: join(root, ".wiki", "config.json"),
+      dest: join(root, ".llm-wiki", "config.json"),
+      type: "file",
+      name: "config",
+    },
+    {
+      src: join(root, ".wiki", "templates"),
+      dest: join(root, ".llm-wiki", "templates"),
+      type: "dir",
+      name: "templates",
+    },
+    {
+      src: join(root, "raw"),
+      dest: join(root, ".llm-wiki", "raw"),
+      type: "dir",
+      name: "raw sources",
+    },
+    {
+      src: join(root, "wiki"),
+      dest: join(root, ".llm-wiki", "wiki"),
+      type: "dir",
+      name: "wiki pages",
+    },
+    {
+      src: join(root, "meta"),
+      dest: join(root, ".llm-wiki", "meta"),
+      type: "dir",
+      name: "metadata",
+    },
+    {
+      src: join(root, "outputs"),
+      dest: join(root, ".llm-wiki", "outputs"),
+      type: "dir",
+      name: "outputs",
+    },
+    {
+      src: join(root, ".discoveries"),
+      dest: join(root, ".llm-wiki", ".discoveries"),
+      type: "dir",
+      name: "discovery tracking",
+    },
   ];
 
   // Check for WIKI_SCHEMA.md at root
@@ -129,7 +164,9 @@ async function main() {
     (e) => e !== "config.json" && e !== "templates",
   );
   if (dotWikiContents.length > 0) {
-    console.log(`\n   ⚠️ Additional .wiki/ contents (${dotWikiContents.length} items) will be left in place.`);
+    console.log(
+      `\n   ⚠️ Additional .wiki/ contents (${dotWikiContents.length} items) will be left in place.`,
+    );
     for (const c of dotWikiContents) {
       console.log(`      .wiki/${c}`);
     }

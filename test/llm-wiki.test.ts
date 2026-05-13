@@ -614,7 +614,10 @@ describe("wiki directory structure", () => {
   });
 
   it("should append to LOG.md", () => {
-    writeFileSync(join(wikiDir, ".llm-wiki", "wiki", "LOG.md"), "## [2026-04-27] ingest | 3 pages\n");
+    writeFileSync(
+      join(wikiDir, ".llm-wiki", "wiki", "LOG.md"),
+      "## [2026-04-27] ingest | 3 pages\n",
+    );
     const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "LOG.md"));
     expect(content).toContain("ingest");
     expect(content).toContain("3 pages");
@@ -668,8 +671,12 @@ describe("cross-reference integrity", () => {
     const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "concepts", "main.md"));
     expect(content).toContain("[[missing-page]]");
     expect(content).toContain("[[another-missing]]");
-    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "entities", "missing-page.md"))).toBe(false);
-    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "concepts", "missing-page.md"))).toBe(false);
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "entities", "missing-page.md"))).toBe(
+      false,
+    );
+    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "concepts", "missing-page.md"))).toBe(
+      false,
+    );
   });
 });
 
@@ -711,16 +718,27 @@ describe("configuration", () => {
       "competitor-2026-04-27.md",
       "---\ntype: change\nentity: competitor\ndetected: 2026-04-27\n---\n\n# Change\nPricing changed from $99 to $149.\n",
     );
-    expect(existsSync(join(wikiDir, ".llm-wiki", "wiki", "changes", "competitor-2026-04-27.md"))).toBe(true);
-    const content = readFile(join(wikiDir, ".llm-wiki", "wiki", "changes", "competitor-2026-04-27.md"));
+    expect(
+      existsSync(join(wikiDir, ".llm-wiki", "wiki", "changes", "competitor-2026-04-27.md")),
+    ).toBe(true);
+    const content = readFile(
+      join(wikiDir, ".llm-wiki", "wiki", "changes", "competitor-2026-04-27.md"),
+    );
     expect(content).toContain("type: change");
     expect(content).toContain("Pricing changed");
   });
 
   it("should track discovery history", () => {
-    const history = { processed: [{ path: ".llm-wiki/raw/articles/a.md", ingested: "2026-04-27" }] };
-    writeFileSync(join(wikiDir, ".llm-wiki", ".discoveries", "history.json"), JSON.stringify(history));
-    const content = JSON.parse(readFile(join(wikiDir, ".llm-wiki", ".discoveries", "history.json")));
+    const history = {
+      processed: [{ path: ".llm-wiki/raw/articles/a.md", ingested: "2026-04-27" }],
+    };
+    writeFileSync(
+      join(wikiDir, ".llm-wiki", ".discoveries", "history.json"),
+      JSON.stringify(history),
+    );
+    const content = JSON.parse(
+      readFile(join(wikiDir, ".llm-wiki", ".discoveries", "history.json")),
+    );
     expect(content.processed).toHaveLength(1);
     expect(content.processed[0].path).toBe(".llm-wiki/raw/articles/a.md");
   });

@@ -3,12 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { appendEvent, rebuildMetadataLight } from "./metadata.js";
-import {
-  type VaultPaths,
-  fmtDate,
-  nextSourceId,
-  resolveVaultPaths,
-} from "./utils.js";
+import { type VaultPaths, fmtDate, nextSourceId, resolveVaultPaths } from "./utils.js";
 
 // ─── Public API ────────────────────────────────────────
 

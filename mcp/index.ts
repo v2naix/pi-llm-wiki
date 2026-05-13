@@ -298,10 +298,7 @@ server.registerTool(
       pages: {},
     });
 
-    const config = readJson<Record<string, unknown>>(
-      join(paths.dotWiki, "config.json"),
-      {},
-    );
+    const config = readJson<Record<string, unknown>>(join(paths.dotWiki, "config.json"), {});
 
     const byType: Record<string, number> = {};
     for (const entry of Object.values(registry.pages)) {
