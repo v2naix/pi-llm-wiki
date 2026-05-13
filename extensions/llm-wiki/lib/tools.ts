@@ -13,13 +13,14 @@ import {
 import { captureFile, captureText, captureUrl } from "./source-packet.js";
 import {
   type VaultPaths,
+  detectVaultFormat,
   ensureVaultStructure,
   extractWikilinks,
   findWikiPages,
   fmtDate,
   getVaultPaths,
   readJson,
-  resolveVaultRoot,
+  resolveVaultPaths,
   writeJson,
 } from "./utils.js";
 
@@ -28,12 +29,11 @@ import {
  */
 
 function getPaths(cwd = process.cwd()): VaultPaths {
-  const root = resolveVaultRoot(cwd);
-  return getVaultPaths(root);
+  return resolveVaultPaths(cwd);
 }
 
 function requireVault(paths: VaultPaths): { ok: true } | { ok: false; reason: string } {
-  if (!existsSync(join(paths.root, ".wiki", "config.json"))) {
+  if (detectVaultFormat(paths.root) === "none") {
     return { ok: false, reason: `No wiki found at ${paths.root}. Run wiki_bootstrap first.` };
   }
   return { ok: true };
@@ -83,7 +83,7 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "| raw/** | extension | immutable after capture |",
         "| wiki/** | model + user | editable knowledge pages |",
         "| meta/* | extension | auto-generated |",
-        "| .wiki/* | human + explicit request | operating rules |",
+        "| . | human + explicit request | operating rules |",
         "",
         "## Source Packet Format",
         "",
@@ -109,7 +109,7 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "- Citation: [[sources/SRC-YYYY-MM-DD-NNN]]",
         "",
       ].join("\n");
-      writeFileSync(join(paths.root, "WIKI_SCHEMA.md"), schema, "utf-8");
+      writeFileSync(join(paths.dotWiki, "WIKI_SCHEMA.md"), schema, "utf-8");
 
       rebuildMetadata(paths);
       appendEvent(paths, { kind: "bootstrap", topic: params.topic, mode });
@@ -122,10 +122,11 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
               `✅ Wiki bootstrapped at \`${paths.root}\``,
               "",
               "**Structure:**",
-              "- raw/sources/ — immutable source packets",
-              "- wiki/ — editable knowledge pages",
-              "- meta/ — auto-generated metadata",
-              "- .wiki/ — config and templates",
+              "- .llm-wiki/raw/sources/ — immutable source packets",
+              "- .llm-wiki/wiki/ — editable knowledge pages",
+              "- .llm-wiki/meta/ — auto-generated metadata",
+              "- .llm-wiki/ — config and templates",
+              "- .llm-wiki/WIKI_SCHEMA.md — operating rules",
               "",
               "Next: Use wiki_capture_source to add your first source.",
             ].join("\n"),

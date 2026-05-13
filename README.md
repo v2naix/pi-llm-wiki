@@ -109,11 +109,13 @@ Initialize an llm wiki here for AI research.
 This calls `wiki_bootstrap` and creates:
 
 ```
-raw/
-wiki/
-meta/
-.wiki/
-WIKI_SCHEMA.md
+.llm-wiki/
+├── config.json
+├── templates/
+├── raw/
+├── wiki/
+├── meta/
+└── WIKI_SCHEMA.md
 ```
 
 ### 2) Capture a source
@@ -133,7 +135,7 @@ Capture these notes into the wiki: ...pasted text...
 ### 3) Integrate the source
 
 1. Capture the source
-2. Read `wiki/sources/SRC-*.md`
+2. Read `.llm-wiki/wiki/sources/SRC-*.md`
 3. Update that source page
 4. Search for impacted canonical pages with `wiki_search`
 5. Create missing pages with `wiki_ensure_page`
@@ -158,45 +160,47 @@ Answer the question and file the result as an analysis page.
 
 ```
 my-wiki/
-├─ raw/
-│  └─ sources/
-│     └─ SRC-2026-05-11-001/
-│        ├─ manifest.json
-│        ├─ original/           # Original artifact
-│        ├─ extracted.md        # Normalized text
-│        └─ attachments/
-├─ wiki/
-│  ├─ sources/                  # Source pages (what each source says)
-│  ├─ concepts/                 # Concepts and recurring ideas
-│  ├─ entities/                 # People, orgs, products, papers, systems
-│  ├─ syntheses/                # Cross-source theses and tensions
-│  └─ analyses/                 # Durable filed answers from queries
-├─ meta/
-│  ├─ registry.json             # Auto-generated search index
-│  ├─ backlinks.json
-│  ├─ index.md
-│  ├─ events.jsonl              # Append-only event log
-│  ├─ log.md
-│  └─ lint-report.md
-├─ .wiki/
-│  ├─ config.json
-│  └─ templates/
-└─ WIKI_SCHEMA.md
+└─ .llm-wiki/
+   ├─ config.json               # Vault config
+   ├─ templates/                 # Page templates
+   ├─ raw/
+   │  └─ sources/
+   │     └─ SRC-2026-05-11-001/
+   │        ├─ manifest.json
+   │        ├─ original/           # Original artifact
+   │        ├─ extracted.md        # Normalized text
+   │        └─ attachments/
+   ├─ wiki/
+   │  ├─ sources/                  # Source pages (what each source says)
+   │  ├─ concepts/                 # Concepts and recurring ideas
+   │  ├─ entities/                 # People, orgs, products, papers, systems
+   │  ├─ syntheses/                # Cross-source theses and tensions
+   │  └─ analyses/                 # Durable filed answers from queries
+   ├─ meta/
+   │  ├─ registry.json             # Auto-generated search index
+   │  ├─ backlinks.json
+   │  ├─ index.md
+   │  ├─ events.jsonl              # Append-only event log
+   │  ├─ log.md
+   │  └─ lint-report.md
+   └─ WIKI_SCHEMA.md               # Operating manual
 ```
 
 ### Ownership Model
 
 | Path | Owner | Rule |
 |------|-------|------|
-| `raw/**` | Extension tools | Immutable after capture |
-| `wiki/**` | Model + user | Editable knowledge pages |
-| `meta/registry.json` | Extension | Generated |
-| `meta/backlinks.json` | Extension | Generated |
-| `meta/index.md` | Extension | Generated |
-| `meta/events.jsonl` | Extension / tool | Append-only |
-| `meta/log.md` | Extension | Generated from events |
-| `meta/lint-report.md` | Extension | Generated |
-| `WIKI_SCHEMA.md` | Human + explicit request | Operating manual |
+| Path | Owner | Rule |
+|------|-------|------|
+| `.llm-wiki/raw/**` | Extension tools | Immutable after capture |
+| `.llm-wiki/wiki/**` | Model + user | Editable knowledge pages |
+| `.llm-wiki/meta/registry.json` | Extension | Generated |
+| `.llm-wiki/meta/backlinks.json` | Extension | Generated |
+| `.llm-wiki/meta/index.md` | Extension | Generated |
+| `.llm-wiki/meta/events.jsonl` | Extension / tool | Append-only |
+| `.llm-wiki/meta/log.md` | Extension | Generated from events |
+| `.llm-wiki/meta/lint-report.md` | Extension | Generated |
+| `.llm-wiki/WIKI_SCHEMA.md` | Human + explicit request | Operating manual |
 
 ---
 
@@ -224,15 +228,15 @@ Stable source-page IDs keep provenance stable even if titles change.
 
 The extension **blocks** direct tool-call edits to:
 
-- `raw/**` — immutable source artifacts
-- `meta/registry.json`
-- `meta/backlinks.json`
-- `meta/events.jsonl`
-- `meta/index.md`
-- `meta/log.md`
-- `meta/lint-report.md`
+- `.llm-wiki/raw/**` — immutable source artifacts
+- `.llm-wiki/meta/registry.json`
+- `.llm-wiki/meta/backlinks.json`
+- `.llm-wiki/meta/events.jsonl`
+- `.llm-wiki/meta/index.md`
+- `.llm-wiki/meta/log.md`
+- `.llm-wiki/meta/lint-report.md`
 
-If the model directly edits `wiki/**` using Pi's built-in `write` or `edit` tools, the extension **automatically rebuilds** generated metadata at the end of the agent turn.
+If the model directly edits `.llm-wiki/wiki/**` using Pi's built-in `write` or `edit` tools, the extension **automatically rebuilds** generated metadata at the end of the agent turn.
 
 ---
 
@@ -241,7 +245,7 @@ If the model directly edits `wiki/**` using Pi's built-in `write` or `edit` tool
 Each captured source is stored as a structured packet:
 
 ```
-raw/sources/SRC-YYYY-MM-DD-NNN/
+.llm-wiki/raw/sources/SRC-YYYY-MM-DD-NNN/
 ├─ manifest.json     # Capture metadata (title, URL, format, timestamp)
 ├─ original/         # Original artifact (preserved as-is)
 ├─ extracted.md      # Normalized text (PDF→md, XML→md, JSON→md, etc.)
@@ -299,10 +303,10 @@ The bundled `llm-wiki` skill teaches the model to:
 Four layers with clear ownership:
 
 ```
-raw/sources/SRC-*/     # Immutable source packets (extension-owned)
-wiki/                   # Editable knowledge pages (you + LLM)
-meta/                   # Auto-generated registry, backlinks, index, log
-.wiki/                  # Config and templates
+.llm-wiki/raw/sources/SRC-*/     # Immutable source packets (extension-owned)
+.llm-wiki/wiki/                   # Editable knowledge pages (you + LLM)
+.llm-wiki/meta/                   # Auto-generated registry, backlinks, index, log
+.llm-wiki/                        # Config and templates
 ```
 
 Read [docs/architecture.md](docs/architecture.md) for the full design document.

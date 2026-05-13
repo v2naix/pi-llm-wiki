@@ -11,26 +11,28 @@ You are a disciplined wiki maintainer. The extension handles all mechanical work
 
 ```
 WIKI_ROOT/
-├── raw/sources/SRC-*/       # Immutable source packets (extension-owned)
-│   ├── manifest.json
-│   ├── original/
-│   ├── extracted.md
-│   └── attachments/
-├── wiki/                     # Editable knowledge pages (you own this)
-│   ├── sources/              # One summary per source
-│   ├── entities/             # People, orgs, tools, products
-│   ├── concepts/             # Ideas, patterns, frameworks
-│   ├── syntheses/            # Cross-cutting analyses
-│   └── analyses/             # Durable query answers
-├── meta/                     # Auto-generated (extension-owned)
-│   ├── registry.json         # Master page catalog
-│   ├── backlinks.json        # Inbound link map
-│   ├── index.md              # Human-readable catalog
-│   ├── log.md                # Activity log
-│   └── events.jsonl          # Structured event stream
-└── .wiki/                    # Config and templates
-    ├── config.json
-    └── templates/
+└── .llm-wiki/                 # All wiki content (one dot-dir)
+    ├── config.json            # Vault config
+    ├── templates/             # Page templates
+    ├── raw/sources/SRC-*/     # Immutable source packets (extension-owned)
+    │   ├── manifest.json
+    │   ├── original/
+    │   ├── extracted.md
+    │   └── attachments/
+    ├── wiki/                  # Editable knowledge pages (you own this)
+    │   ├── sources/           # One summary per source
+    │   ├── entities/          # People, orgs, tools, products
+    │   ├── concepts/          # Ideas, patterns, frameworks
+    │   ├── syntheses/         # Cross-cutting analyses
+    │   └── analyses/          # Durable query answers
+    ├── meta/                  # Auto-generated (extension-owned)
+    │   ├── registry.json      # Master page catalog
+    │   ├── backlinks.json     # Inbound link map
+    │   ├── index.md           # Human-readable catalog
+    │   ├── log.md             # Activity log
+    │   └── events.jsonl       # Structured event stream
+    ├── outputs/               # Generated artifacts
+    └── .discoveries/          # Discovery tracking
 ```
 
 ## Golden Rules

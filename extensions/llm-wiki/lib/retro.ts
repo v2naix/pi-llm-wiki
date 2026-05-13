@@ -6,9 +6,8 @@ import { appendEvent, rebuildMetadataLight } from "./metadata.js";
 import {
   type VaultPaths,
   fmtDate,
-  getVaultPaths,
   nextSourceId,
-  resolveVaultRoot,
+  resolveVaultPaths,
 } from "./utils.js";
 
 // ─── Public API ────────────────────────────────────────
@@ -158,10 +157,9 @@ export function registerWikiRetro(pi: ExtensionAPI): void {
       ),
     }),
     async execute(_toolCallId, params) {
-      const root = resolveVaultRoot(process.cwd());
-      const paths = getVaultPaths(root);
+      const paths = resolveVaultPaths(process.cwd());
 
-      if (!existsSync(join(root, ".wiki", "config.json"))) {
+      if (!existsSync(join(paths.dotWiki, "config.json"))) {
         return {
           content: [
             {

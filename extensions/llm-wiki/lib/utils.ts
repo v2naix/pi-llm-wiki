@@ -17,24 +17,53 @@ export interface VaultPaths {
   discoveries: string;
 }
 
+/** Detect whether a vault root uses new (.llm-wiki) or legacy (.wiki) layout. */
+export type VaultFormat = "new" | "legacy" | "none";
+
+/**
+ * Detect the vault format at a given directory.
+ * Returns "new" if .llm-wiki/config.json exists,
+ * "legacy" if .wiki/config.json exists,
+ * "none" otherwise.
+ */
+export function detectVaultFormat(dir: string): VaultFormat {
+  if (existsSync(join(dir, ".llm-wiki", "config.json"))) return "new";
+  if (existsSync(join(dir, ".wiki", "config.json"))) return "legacy";
+  return "none";
+}
+
 /** Resolve vault root from cwd or find nearest wiki root. */
 export function resolveVaultRoot(cwd: string): string {
-  // If cwd has .wiki/config.json, it's the root
-  if (existsSync(join(cwd, ".wiki", "config.json"))) return cwd;
+  // Check for any vault format at cwd
+  if (detectVaultFormat(cwd) !== "none") return cwd;
 
-  // Walk up looking for .wiki/config.json
+  // Walk up looking for a vault sentinel (new or legacy)
   let dir = cwd;
   while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, ".wiki", "config.json"))) return dir;
     dir = dirname(dir);
+    if (detectVaultFormat(dir) !== "none") return dir;
   }
 
   // Fallback: cwd itself
   return cwd;
 }
 
-/** Get all vault paths. */
+/** Get all vault paths for the new (.llm-wiki) layout. */
 export function getVaultPaths(root: string): VaultPaths {
+  return {
+    root,
+    raw: join(root, ".llm-wiki", "raw"),
+    rawSources: join(root, ".llm-wiki", "raw", "sources"),
+    wiki: join(root, ".llm-wiki", "wiki"),
+    meta: join(root, ".llm-wiki", "meta"),
+    dotWiki: join(root, ".llm-wiki"),
+    outputs: join(root, ".llm-wiki", "outputs"),
+    discoveries: join(root, ".llm-wiki", ".discoveries"),
+  };
+}
+
+/** Get all vault paths for the legacy (.wiki) layout. */
+export function getLegacyVaultPaths(root: string): VaultPaths {
   return {
     root,
     raw: join(root, "raw"),
@@ -45,6 +74,17 @@ export function getVaultPaths(root: string): VaultPaths {
     outputs: join(root, "outputs"),
     discoveries: join(root, ".discoveries"),
   };
+}
+
+/**
+ * Resolve vault paths, auto-detecting new vs legacy layout.
+ * This is the main entry point: use this instead of resolveVaultRoot + getVaultPaths.
+ */
+export function resolveVaultPaths(cwd: string): VaultPaths {
+  const root = resolveVaultRoot(cwd);
+  const format = detectVaultFormat(root);
+  if (format === "legacy") return getLegacyVaultPaths(root);
+  return getVaultPaths(root);
 }
 
 /** Ensure all vault directories exist. */
@@ -199,10 +239,10 @@ export async function exec(
 /** Check if a path is inside a protected directory. */
 export function isProtectedPath(
   absPath: string,
-  root: string,
+  paths: VaultPaths,
 ): { protected: boolean; reason?: string } {
-  const rawPath = resolve(root, "raw");
-  const metaPath = resolve(root, "meta");
+  const rawPath = resolve(paths.raw);
+  const metaPath = resolve(paths.meta);
   const norm = resolve(absPath);
 
   if (norm.startsWith(`${rawPath}/`) || norm === rawPath) {

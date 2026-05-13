@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-13
+
+### Added
+- **Wiki vault restructured under `.llm-wiki/`** (Issue #22, PR #23 by @arjun-zosma): All wiki content now lives in a single `.llm-wiki/` subdirectory — cleaner repo isolation, easier gitignore, zero directory name collisions.
+- **Backward compatibility**: Old vaults (`.wiki/config.json` sentinel) are auto-detected and continue to work. New vaults use `.llm-wiki/config.json`.
+- **`detectVaultFormat()`** utility: Returns `"new"`, `"legacy"`, or `"none"` for any directory.
+- **`resolveVaultPaths()`** utility: Auto-detects vault format and returns correct paths.
+- **`getLegacyVaultPaths()`** utility: Returns old-style paths for migration support.
+- **Migration script** (`scripts/migrate-llm-wiki.js`): One-time tool to move old vaults to new layout. Supports `--dry-run` and `--force` flags.
+- **5 new backward-compatibility tests**: Verify new format detection, legacy format detection, auto-resolution, and no-vault handling.
+
+### Changed
+- `resolveVaultRoot()` now checks for `.llm-wiki/config.json` first, then falls back to `.wiki/config.json`.
+- `getVaultPaths()` returns paths under `.llm-wiki/`:
+  - `raw/` → `.llm-wiki/raw/`, `wiki/` → `.llm-wiki/wiki/`, `meta/` → `.llm-wiki/meta/`
+  - `.wiki/` → `.llm-wiki/` (config directly in the dot-dir)
+  - `outputs/` → `.llm-wiki/outputs/`, `.discoveries/` → `.llm-wiki/.discoveries/`
+- `isProtectedPath()` now takes `VaultPaths` instead of `root` string.
+- `wiki_bootstrap` creates new `.llm-wiki/` layout by default.
+- MCP server updated with own copy of path detection logic.
+- All templates, prompts, documentation, and tests updated to reflect new layout.
+
+### Migration
+- Run `node scripts/migrate-llm-wiki.js` in your wiki root to migrate from the old layout.
+- Old `.wiki/` directory is preserved as a forwarding marker (`.wiki/MIGRATED_TO_LLM_WIKI.md`).
+- No data loss — all content is moved, nothing deleted.
+
 ## [0.6.0] - 2026-05-11
 
 ### Added
