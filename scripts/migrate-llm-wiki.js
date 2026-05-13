@@ -26,29 +26,6 @@ function log(action, ...args) {
   console.log(`${prefix} ${action}`, ...args);
 }
 
-function moveContents(src, dest, name) {
-  if (!existsSync(src)) {
-    log(`SKIP ${name} — source does not exist: ${src}`);
-    return;
-  }
-  if (existsSync(dest)) {
-    log(`SKIP ${name} — destination already exists: ${dest}`);
-    return;
-  }
-  log(`MOVE ${name}: ${src} → ${dest}`);
-  if (!DRY_RUN) {
-    mkdirSync(dest, { recursive: true });
-    // Move all entries inside src to dest
-    for (const entry of readdirSync(src)) {
-      renameSync(join(src, entry), join(dest, entry));
-    }
-    // Remove empty source directory
-    try {
-      rmSync(src);
-    } catch {}
-  }
-}
-
 function moveDir(src, dest, name) {
   if (!existsSync(src)) {
     log(`SKIP ${name} — source does not exist: ${src}`);
