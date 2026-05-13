@@ -17,7 +17,7 @@ Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand th
 
 ## Steps
 
-1. Scan all files in `.llm-wiki/wiki/`
+1. Scan all files in `.llm-wiki/wiki/` (respecting `.gitignore` — skip any matched files)
 2. Check for:
    - **Contradictions:** Conflicting claims between pages
    - **Orphans:** Pages with zero inbound `[[wikilinks]]`

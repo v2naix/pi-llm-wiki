@@ -19,7 +19,7 @@ Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand th
 
 1. Read `.llm-wiki/config.yaml` and `.llm-wiki/.discoveries/history.json`
 2. If a specific path is given (e.g., `/wiki-ingest .llm-wiki/raw/articles/my-file.md`), process just that file
-3. If no path given, scan all files in `.llm-wiki/raw/` and find ones not in history
+3. If no path given, scan all files in `.llm-wiki/raw/` (respecting `.gitignore` — skip any matched files) and find ones not in history
 4. For each new source:
    a. Read the full content
    b. Briefly discuss with the user: "This is about [topic]. Key points: [summary]. Any specific emphasis?"
