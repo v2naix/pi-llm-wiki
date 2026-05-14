@@ -51,7 +51,7 @@ export default function (pi: ExtensionAPI) {
   installGuardrails(pi);
 
   pi.on("session_start", async (_event, ctx) => {
-    ctx.ui.setStatus("llm-wiki", "🧠 LLM Wiki (11 tools, auto-recall active)");
+    ctx.ui.setStatus("llm-wiki", "🧠 LLM Wiki (12 tools, auto-recall active)");
   });
 
   // ─── Auto-recall hook ──────────────────────────────

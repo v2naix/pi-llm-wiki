@@ -1,6 +1,6 @@
 ---
 name: llm-wiki
-description: Build and maintain a persistent, interlinked Obsidian-compatible markdown wiki using Karpathy's LLM Wiki pattern. Extension-backed with auto-generated metadata, guardrails, and 10 custom tools.
+description: Build and maintain a persistent, interlinked Obsidian-compatible markdown wiki using Karpathy's LLM Wiki pattern. Extension-backed with auto-generated metadata, guardrails, and 12 custom tools.
 ---
 
 # LLM Wiki for Pi

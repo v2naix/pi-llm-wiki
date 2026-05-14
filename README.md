@@ -84,9 +84,15 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 
 | Command | Description |
 |---------|-------------|
+| `/wiki-init <topic>` | Initialize a new LLM Wiki vault |
+| `/wiki-ingest [path]` | Process new source files and update the wiki |
+| `/wiki-query <question>` | Ask questions against the wiki with citations |
+| `/wiki-discover [--topic <topic>]` | Auto-discover new sources from the web |
+| `/wiki-run [--schedule daily\|weekly]` | Full cycle: discover → ingest → lint |
+| `/wiki-lint [--fix]` | Health check (orphans, contradictions, gaps) |
 | `/wiki-status` | Show a concise operational summary |
-| `/wiki-lint [mode]` | Run mechanical lint (`all`, `links`, `orphans`, `frontmatter`, `duplicates`, `coverage`, `staleness`) |
-| `/wiki-rebuild` | Force a full metadata rebuild |
+| `/wiki-digest [--period daily\|weekly]` | Generate a digest of recent activity |
+| `/wiki-retro` | Save atomic insights from completed tasks |
 
 ---
 

@@ -17,7 +17,7 @@ Instructions for AI agents working on this codebase.
 ## File Layout
 
 ```
-├── extensions/llm-wiki/     # TypeScript extension (10 tools + guardrails)
+├── extensions/llm-wiki/     # TypeScript extension (12 tools + guardrails)
 │   ├── index.ts             # Entry point
 │   └── lib/                 # tools.ts, metadata.ts, guardrails.ts, utils.ts, source-packet.ts
 ├── skills/llm-wiki/         # SKILL.md + templates

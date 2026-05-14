@@ -12,15 +12,18 @@
 | `/wiki-run`      | Full cycle (discover → ingest → lint) |
 | `/wiki-status`   | Show wiki health                      |
 | `/wiki-digest`   | Daily/weekly summary                  |
+| `/wiki-retro`    | Save atomic insights from tasks        |
 
 ## Extension Tools
 
-The extension registers 10 tools the LLM can call directly:
+The extension registers 12 tools the LLM can call directly:
 
 | Tool                  | Purpose                                     |
 | --------------------- | ------------------------------------------- |
 | `wiki_bootstrap`      | Initialize a new vault                      |
 | `wiki_capture_source` | Capture URL/file/text into immutable packet |
+| `wiki_recall`         | 🔄 Auto-called at turn start — search wiki  |
+| `wiki_retro`          | Save atomic insights from completed tasks   |
 | `wiki_ingest`         | Get batch of uningested sources             |
 | `wiki_ensure_page`    | Create canonical page from template         |
 | `wiki_search`         | Search the wiki registry                    |
