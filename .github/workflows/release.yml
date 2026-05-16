@@ -43,15 +43,6 @@ jobs:
           node -e "const p=require('./package.json'); p.version='${{ steps.version.outputs.VERSION }}'; require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2)+'\n')"
           npx biome check --fix package.json 2>&1
 
-      - name: Commit version bump back to main
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git diff --quiet package.json && echo "Version already matches, skipping commit" || {
-            git add package.json
-            git commit -m "chore(release): v${{ steps.version.outputs.VERSION }}"
-            git push origin HEAD:main
-          }
 
       - name: Generate Release Notes
         id: notes

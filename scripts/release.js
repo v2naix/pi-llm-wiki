@@ -63,10 +63,9 @@ if (changelog.includes("## [Unreleased]")) {
 }
 fs.writeFileSync(changelogPath, changelog, "utf-8");
 
-// Commit and tag
-execSync("git add package.json CHANGELOG.md", { stdio: "inherit" });
-execSync(`git commit -m "chore(release): v${next}"`, { stdio: "inherit" });
+// Tag the current commit (no commit — tags are the release source of truth)
 execSync(`git tag v${next}`, { stdio: "inherit" });
 
-console.log(`\n✅ Released v${next}`);
-console.log(`Run "npm run release:push" to publish.`);
+console.log(`\n✅ Tagged v${next} at current HEAD`);
+console.log("Run the following to publish:");
+console.log(`  git push origin v${next}`);
