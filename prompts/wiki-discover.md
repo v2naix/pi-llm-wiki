@@ -7,27 +7,24 @@ topLevelCli: true
 
 # /wiki-discover
 
-Find new source material for the wiki by searching the web.
+Find new source material for the wiki by searching the web and capturing them as source packets.
 
 ## User Arguments
 
 $ARGUMENTS
 
-Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first. Also read `config.yaml` for topics and feeds.
-
 ## Steps
 
-1. Read `.llm-wiki/config.yaml` → extract topics, keywords, feeds
-2. Read `.llm-wiki/.discoveries/gaps.json` → knowledge gaps to fill
-3. Read `.llm-wiki/.discoveries/history.json` → already-fetched URLs
-4. Search for new sources:
-   - Web search each topic + latest keywords
-   - Search for gaps from `.llm-wiki/.discoveries/gaps.json`
-   - If `--topic` specified, focus search on that topic
-5. For each promising result:
-   a. Fetch full content
-   b. Save to `.llm-wiki/raw/articles/YYYY-MM-DD-slug.md` with frontmatter (title, url, discovered, topic)
-6. Update `.llm-wiki/.discoveries/history.json`
-7. Report: "Discovered [N] new sources. Run `/wiki-ingest` to process them."
+1. Call `wiki_status()` to get the current topic and mode from the wiki config.
+2. Use `wiki_search(query=<topic>)` to find existing pages and identify what's already covered.
+3. Search the web for new sources:
+   - If `--topic` is specified in `$ARGUMENTS`, focus on that topic
+   - Otherwise, search for the wiki's main topic + "latest", "news", "update"
+4. For each promising result (max 5-10):
+   a. Call `wiki_capture_source(url=<url>)` to capture it as an immutable source packet
+   b. Skip ads, listicles, and duplicates — prefer in-depth analysis
+5. Report: "Discovered [N] new sources captured as packets. Run `/wiki-ingest` to synthesize them into knowledge pages."
 
-**Rules:** Max 5-10 sources. Skip ads, listicles, duplicates. Prefer in-depth analysis.
+**Rules:**
+- Do NOT manually save files to `raw/` — always use `wiki_capture_source`.
+- The extension handles manifest, extraction, and skeleton page creation automatically.

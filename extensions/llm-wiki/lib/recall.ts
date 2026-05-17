@@ -147,8 +147,8 @@ export function registerWikiRecall(pi: ExtensionAPI): void {
         Type.Number({ description: "Max results (default: 5, max: 10)", default: 5 }),
       ),
     }),
-    async execute(_toolCallId, params) {
-      const paths = resolveVaultPaths(process.cwd());
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
 
       if (!existsSync(join(paths.dotWiki, "config.json"))) {
         return {

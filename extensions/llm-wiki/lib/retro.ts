@@ -151,8 +151,8 @@ export function registerWikiRetro(pi: ExtensionAPI): void {
         }),
       ),
     }),
-    async execute(_toolCallId, params) {
-      const paths = resolveVaultPaths(process.cwd());
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const paths = resolveVaultPaths(ctx.cwd ?? process.cwd());
 
       if (!existsSync(join(paths.dotWiki, "config.json"))) {
         return {

@@ -13,24 +13,25 @@ Ask a question and get an answer synthesized from wiki content.
 
 $ARGUMENTS
 
-Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand the full schema and conventions.
-
 ## Steps
 
-1. Read `wiki/INDEX.md` to find pages relevant to the question
-2. Read those pages in full (don't stop at 1-2 pages — get thorough context)
-3. Synthesize an answer with `[[wikilink]]` citations to specific wiki pages
-4. If the answer reveals a new connection or analysis, save it as a synthesis page in `wiki/syntheses/`
-5. Append to `wiki/LOG.md`
+1. Call `wiki_recall(query=<question>)` to find relevant wiki pages.
+2. Read the full content of each matching page using the `read` tool.
+3. Synthesize an answer with `[[wikilink]]` citations to specific wiki pages.
+4. If the answer reveals a new connection or analysis worth preserving:
+   - Call `wiki_ensure_page(type=synthesis, title=<title>, content=<content>)` to save it
+5. Call `wiki_log_event(kind=query, details={question: <question>})` to log the query.
 
-**Rules:** Answer ONLY from wiki content, not from general knowledge. If the wiki lacks information, say so clearly and suggest what sources would help fill the gap.
+**Rules:**
+- Answer ONLY from wiki content, not from general knowledge.
+- If the wiki lacks information, say so clearly and suggest what sources would help fill the gap.
 
 **Example:**
 
 ```
 /wiki-query What are the key differences between RAG and LLM Wiki?
-→ Reads INDEX.md, finds pages on RAG and LLM Wiki patterns
-→ Reads both pages
-→ Synthesizes a comparison table with [[wikilink]] citations
-→ Saves as wiki/syntheses/rag-vs-llm-wiki.md
+→ Calls wiki_recall(query="RAG LLM Wiki differences")
+→ Reads matching pages
+→ Synthesizes a comparison with [[wikilink]] citations
+→ Saves as synthesis page via wiki_ensure_page(type=synthesis, ...)
 ```

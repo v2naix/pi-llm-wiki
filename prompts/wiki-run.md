@@ -13,27 +13,17 @@ Run the complete wiki maintenance cycle: discover new sources, ingest them, and 
 
 $ARGUMENTS
 
-Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first.
-
 ## Steps
 
-1. Run `/wiki-discover` → find new sources
-2. Run `/wiki-ingest` → process all new files
-3. Run `/wiki-lint` → health check
-4. If critical gaps found → optionally one more discover+ingest cycle
-5. Save summary → `outputs/run-YYYY-MM-DD.md`
-6. Report final summary
+1. **Discover:** Use web search to find new sources on the wiki's topic, then capture each with `wiki_capture_source(url=<url>)` (max 5-10).
+2. **Ingest:** Call `wiki_ingest(batch_size=3)` and process returned sources — read extracted.md, update source pages, create entity/concept pages, add cross-references.
+3. **Lint:** Call `wiki_lint(auto_fix=false)` to run a health check.
+4. If critical gaps found → optionally run one more discover+ingest cycle.
+5. Save summary to `.llm-wiki/outputs/run-YYYY-MM-DD.md` using the `write` tool.
+6. Report final summary.
 
 ### Scheduling
 
-If `--schedule daily` is used, use `schedule_prompt` to set up daily runs:
+If `--schedule` is provided, call `wiki_watch(interval=<daily|weekly>)` to set up automatic updates.
 
-```
-schedule_prompt action=add schedule="0 0 8 * * *" prompt="Run /wiki-run for the LLM Wiki"
-```
-
-If `--schedule weekly` is used:
-
-```
-schedule_prompt action=add schedule="0 0 9 * * 1" prompt="Run /wiki-run for the LLM Wiki"
-```
+If `--schedule hourly` is provided, call `wiki_watch(interval=hourly)`.

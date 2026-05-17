@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { installGuardrails } from "./lib/guardrails.js";
@@ -57,10 +58,17 @@ export default function (pi: ExtensionAPI) {
     bootstrapSuggested = false;
     const paths = resolveVaultPaths(process.cwd());
     if (!existsSync(join(paths.dotWiki, "config.json"))) {
-      ctx.ui.setStatus("llm-wiki", "📝 No wiki — call wiki_bootstrap to enable");
+      // Check for global wiki
+      const globalRoot = join(homedir(), ".llm-wiki-root");
+      if (existsSync(join(globalRoot, ".llm-wiki", "config.json"))) {
+        ctx.ui.setStatus("llm-wiki", "🌐 Global wiki active (~/.llm-wiki-root)");
+      } else {
+        ctx.ui.setStatus("llm-wiki", "📝 No wiki — call wiki_bootstrap (global=true for ~/.llm-wiki-root)");
+      }
       return;
     }
-    ctx.ui.setStatus("llm-wiki", "🧠 LLM Wiki (12 tools, auto-recall active)");
+    const isGlobal = paths.root === join(homedir(), ".llm-wiki-root");
+    ctx.ui.setStatus("llm-wiki", isGlobal ? "🌐 Global wiki active" : "🧠 LLM Wiki (12 tools, auto-recall active)");
   });
 
   // ─── Auto-recall hook ──────────────────────────────

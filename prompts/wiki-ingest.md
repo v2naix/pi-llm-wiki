@@ -1,34 +1,33 @@
 ---
-description: Process new source files in raw/ and update the wiki. Creates summaries, entities, concepts, and cross-references.
-argument-hint: "[path]"
+description: Process new source packets and synthesize them into wiki knowledge pages.
+argument-hint: "[source_id]"
 section: LLM Wiki
 topLevelCli: true
 ---
 
 # /wiki-ingest
 
-Process new files in `.llm-wiki/raw/` and integrate them into the wiki.
+Process uningested source packets and synthesize them into wiki knowledge pages.
 
 ## User Arguments
 
 $ARGUMENTS
 
-Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand the full schema, page formats, and conventions.
-
 ## Steps
 
-1. Read `.llm-wiki/config.yaml` and `.llm-wiki/.discoveries/history.json`
-2. If a specific path is given (e.g., `/wiki-ingest .llm-wiki/raw/articles/my-file.md`), process just that file
-3. If no path given, scan all files in `.llm-wiki/raw/` (respecting `.gitignore` — skip any matched files) and find ones not in history
-4. For each new source:
-   a. Read the full content
-   b. Briefly discuss with the user: "This is about [topic]. Key points: [summary]. Any specific emphasis?"
-   c. Create/update pages in `.llm-wiki/wiki/sources/`, `.llm-wiki/wiki/entities/`, `.llm-wiki/wiki/concepts/`
-   d. Add `[[wikilinks]]` cross-references between related pages
-   e. Flag any contradictions with existing wiki content
-5. Update `.llm-wiki/wiki/INDEX.md` with all new/updated pages
-6. Append to `.llm-wiki/wiki/LOG.md`
-7. Update `.llm-wiki/.discoveries/history.json`
-8. Report: "Ingested [N] sources → [M] pages created/updated. [X] contradictions flagged."
+1. Call `wiki_ingest(source_id=<id if provided>, batch_size=3)` to get sources needing synthesis.
+2. If the tool reports "All sources ingested", inform the user and stop.
+3. For each source in the returned batch:
+   a. Read the extracted text from `raw/sources/<SOURCE_ID>/extracted.md`
+   b. Update the skeleton source page in `wiki/sources/` with a proper summary, key entities, and concepts
+   c. Use `wiki_ensure_page(type=entity, title=<name>)` for each new entity (people, orgs, tools, products)
+   d. Use `wiki_ensure_page(type=concept, title=<name>)` for each new concept (ideas, patterns, frameworks)
+   e. Add `[[wikilinks]]` cross-references between related pages
+   f. Flag any contradictions with existing wiki content using `⚠️ **Contradiction**` markers
+4. After processing the batch, call `wiki_rebuild_meta` to update metadata.
+5. Report: "Ingested [N] sources → [M] pages created/updated. [X] contradictions flagged."
 
-**Rules:** Never modify raw/ files. Never fabricate information. Always cite sources.
+**Rules:**
+- Never modify files in `raw/` — source packets are immutable after capture.
+- Never fabricate information — always cite sources with `[[sources/SRC-...]]`.
+- The extension auto-updates metadata — you do NOT need to manually edit `meta/` files.

@@ -89,6 +89,16 @@ If the extension injects a "No LLM Wiki found" hint, use `ask_user` to offer cre
 
 If the user agrees, call `wiki_bootstrap(topic="...", mode="personal")`. Suggest only once per session.
 
+### Global Wiki
+
+For a wiki that spans all projects (not tied to a specific directory), use:
+
+```
+wiki_bootstrap(topic="...", global=true)
+```
+
+This creates the vault at `~/.llm-wiki-root` which is automatically discovered by all tools regardless of working directory.
+
 ## Available Tools
 
 Use these directly — they handle scaffolding, bookkeeping, recall, and capture:
