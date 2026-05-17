@@ -81,6 +81,14 @@ wiki_recall(query="specific terms...", max_results=10)
 
 This gives you more control over the search terms and returns content previews.
 
+### No Wiki Yet
+
+If the extension injects a "No LLM Wiki found" hint, use `ask_user` to offer creating one:
+
+> "No LLM Wiki found in this directory. Would you like to create one? It gives you a linked knowledge base with automatic recall."
+
+If the user agrees, call `wiki_bootstrap(topic="...", mode="personal")`. Suggest only once per session.
+
 ## Available Tools
 
 Use these directly — they handle scaffolding, bookkeeping, recall, and capture:
