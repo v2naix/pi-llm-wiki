@@ -102,6 +102,7 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "- **concept** — ideas, patterns, frameworks",
         "- **synthesis** — cross-source theses and tensions",
         "- **analysis** — durable filed answers from queries",
+        "- **requirement** — atomic requirements with status, priority, and traceability",
         "",
         "## Linking Style",
         "",
@@ -368,7 +369,9 @@ export function registerWikiEnsurePage(pi: ExtensionAPI): void {
       "Search existing pages first with wiki_search.",
     ],
     parameters: Type.Object({
-      type: Type.String({ description: "Page type: entity | concept | synthesis | analysis" }),
+      type: Type.String({
+        description: "Page type: entity | concept | synthesis | analysis | requirement",
+      }),
       title: Type.String({ description: "Page title" }),
       content: Type.Optional(
         Type.String({ description: "Optional initial content (otherwise uses template)" }),
@@ -398,6 +401,7 @@ export function registerWikiEnsurePage(pi: ExtensionAPI): void {
         concept: "concepts",
         synthesis: "syntheses",
         analysis: "analyses",
+        requirement: "requirements",
       };
       const folder = folderMap[type] || "concepts";
       const pagePath = join(paths.wiki, folder, `${slug}.md`);
@@ -465,6 +469,43 @@ function buildPageTemplate(
       "[Description to be filled]",
       "Durable answer from a query.\n\n## Question\n\n[Original question]",
     );
+  }
+  if (type === "requirement") {
+    return [
+      "---",
+      "type: requirement",
+      `created: ${date}`,
+      `updated: ${date}`,
+      "status: draft",
+      "priority: p2",
+      "source_id: ",
+      "depends_on: []",
+      "---",
+      "",
+      `# ${title}`,
+      "",
+      "## Description",
+      "",
+      "[Clear description of what this requirement entails]",
+      "",
+      "## Acceptance Criteria",
+      "",
+      "- [ ] [Criterion 1]",
+      "- [ ] [Criterion 2]",
+      "",
+      "## Dependencies",
+      "",
+      "_Pages this requirement depends on._",
+      "",
+      "## Implementation Notes",
+      "",
+      "[Optional notes]",
+      "",
+      "## Sources",
+      "",
+      "- [[sources/SRC-...]] — original concept capture",
+      "",
+    ].join("\n");
   }
   return base;
 }

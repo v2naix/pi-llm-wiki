@@ -97,6 +97,7 @@ export function ensureVaultStructure(paths: VaultPaths): void {
     join(paths.wiki, "concepts"),
     join(paths.wiki, "syntheses"),
     join(paths.wiki, "analyses"),
+    join(paths.wiki, "requirements"),
     paths.meta,
     paths.dotWiki,
     paths.outputs,
