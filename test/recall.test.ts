@@ -206,4 +206,13 @@ describe("wiki recall", () => {
   it("should return empty string for empty results", () => {
     expect(formatRecallContext([])).toBe("");
   });
+
+  it("should return empty results when no vault exists", () => {
+    const emptyDir = join(tmpDir, "no-vault");
+    mkdirSync(emptyDir, { recursive: true });
+    const paths = getVaultPaths(emptyDir);
+    // No config.json means no vault — search should handle gracefully
+    const results = searchWiki(paths, "anything");
+    expect(results).toEqual([]);
+  });
 });

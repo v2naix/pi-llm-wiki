@@ -34,6 +34,9 @@ import { resolveVaultPaths } from "./lib/utils.js";
  * - wiki_recall tool available for explicit deep searches
  */
 
+// Track whether we already suggested bootstrapping this session
+let bootstrapSuggested = false;
+
 export default function (pi: ExtensionAPI) {
   registerWikiBootstrap(pi);
   registerWikiCaptureSource(pi);
@@ -51,6 +54,12 @@ export default function (pi: ExtensionAPI) {
   installGuardrails(pi);
 
   pi.on("session_start", async (_event, ctx) => {
+    bootstrapSuggested = false;
+    const paths = resolveVaultPaths(process.cwd());
+    if (!existsSync(join(paths.dotWiki, "config.json"))) {
+      ctx.ui.setStatus("llm-wiki", "📝 No wiki — call wiki_bootstrap to enable");
+      return;
+    }
     ctx.ui.setStatus("llm-wiki", "🧠 LLM Wiki (12 tools, auto-recall active)");
   });
 
@@ -60,7 +69,14 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, _ctx) => {
     const paths = resolveVaultPaths(process.cwd());
     if (!existsSync(join(paths.dotWiki, "config.json"))) {
-      return; // No wiki vault — nothing to recall
+      // No wiki — suggest bootstrap on first turn only
+      if (!bootstrapSuggested) {
+        bootstrapSuggested = true;
+        return {
+          systemPrompt: `${event.systemPrompt}\n\n📝 No LLM Wiki found in this directory. On your first response, use ask_user to offer the user creating one via wiki_bootstrap. After suggesting once, do not repeat.`,
+        };
+      }
+      return;
     }
 
     const prompt = event.prompt || "";
