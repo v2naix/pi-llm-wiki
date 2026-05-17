@@ -20,6 +20,8 @@ Turn raw sources (URLs, PDFs, markdown, JSON, XML) into a durable, interlinked, 
 pi install npm:@zosmaai/pi-llm-wiki
 ```
 
+The extension will proactively suggest creating a wiki on your first session. Alternatively:
+
 ```
 /wiki-init "AI Engineering"
 /wiki-ingest
@@ -54,6 +56,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | 📊 **Dashboard** | `wiki_status` — counts, source states, recent activity |
 | 🤖 **Auto-update watch** | `wiki_watch` — schedule periodic discovery + ingest |
 | 🧠 **Auto-recall** | Wiki searched automatically before every turn — relevant pages injected into context |
+| 📝 **Auto-bootstrap** | Extension suggests creating a wiki when none exists in the current directory |
 | 💾 **Auto-capture** | `wiki_retro` — save atomic insights from completed tasks with one call |
 | 🌐 **MCP Server** | Use with Claude Code, Cursor, Windsurf via stdio MCP transport |
 | 📝 **Obsidian-friendly** | Folder-qualified wikilinks, stable source-ID citations, compatible vault |
