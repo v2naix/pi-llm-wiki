@@ -1,7 +1,7 @@
 ---
 name: llm-wiki
 description: Build and maintain a persistent, interlinked Obsidian-compatible markdown wiki using Karpathy's LLM Wiki pattern. Extension-backed with auto-generated metadata, guardrails, and 12 custom tools.
-whenToUse: Call wiki_recall at task start to find relevant wiki pages. Call wiki_retro at task end to save new insights. The extension's auto-recall injects a brief status line, but explicit wiki_recall calls get better results.
+whenToUse: Call wiki_recall at task start to find relevant wiki pages. Call wiki_retro at task end to save new insights. The extension injects a brief status line, but explicit wiki_recall calls with task-specific terms get better results.
 ---
 
 # LLM Wiki for Pi
@@ -56,7 +56,7 @@ WIKI_ROOT/
 | Find orphans                | Shell `grep` scans           | Instant from `backlinks.json`         |
 | Block raw edits             | Skill says "don't"           | Extension **enforces** immutability   |
 | Create source page          | 8 tool calls                 | `wiki_capture_source` + LLM synthesis |
-| **Recall wiki knowledge**   | Never happens                | **Auto-search before every turn**     |
+| **Recall wiki knowledge**   | Never happens                | **Layered search before every turn (personal + project)** |
 | **Save task insights**      | Manual capture               | `wiki_retro` — one tool call          |
 
 ## 🔄 Wiki Usage
@@ -135,19 +135,20 @@ Use these directly — they handle scaffolding, bookkeeping, recall, and capture
 
 ### Query → Answer → File
 
-1. **Auto-recall**: Extension surfaces relevant wiki pages automatically
-2. Read those pages
-3. Synthesize answer with `[[wikilink]]` citations
-4. If novel: create analysis page via `wiki_ensure_page(type="analysis")`
-5. Extension auto-updates metadata
+1. **Layered recall**: Extension searches personal + project vaults, injects matching pages with vault labels
+2. For better results: call `wiki_recall` explicitly with task-specific terms
+3. Read those pages
+4. Synthesize answer with `[[wikilink]]` citations
+5. If novel: create analysis page via `wiki_ensure_page(type="analysis")`
+6. Extension auto-updates metadata
 
 ### Task → Capture → Retro
 
 1. Complete a meaningful task
 2. Call `wiki_retro` to save key insights
-3. The insight is captured as a source packet
+3. The insight is saved as a single markdown file
 4. Extension auto-updates metadata
-5. Next time, auto-recall surfaces your saved insight
+5. Next time, layered recall surfaces your saved insight
 
 ## Page Conventions
 

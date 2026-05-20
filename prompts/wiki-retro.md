@@ -1,5 +1,5 @@
 ---
-description: Save an atomic insight from the current task into the wiki. Creates a source packet and source page for future auto-recall.
+description: Save an atomic insight from the current task into the wiki. Creates a single markdown file that layered recall surfaces in future sessions.
 argument-hint: "<title> [--category <category>]"
 section: LLM Wiki
 topLevelCli: true
@@ -9,7 +9,7 @@ topLevelCli: true
 
 Save an atomic insight from a completed task into the wiki.
 
-Captures what you learned as an immutable source packet + wiki source page so that `wiki_recall` automatically surfaces it in future sessions.
+Captures what you learned as a single markdown file so that layered recall surfaces it in future sessions.
 
 ## User Arguments
 
@@ -25,7 +25,7 @@ Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand th
    - `title`: short descriptive phrase, ≤60 chars, noun phrase not a sentence
    - `body`: markdown explanation with `[[wikilinks]]` to related wiki pages
    - `category`: optional (frontend, architecture, devops, bugfix, design, etc.)
-3. Confirm the insight was saved and will be auto-surfaced in future sessions
+3. Confirm the insight was saved and will be surfaced by layered recall in future sessions
 4. If the insight relates to existing wiki pages, update those pages with cross-references
 
 **Rules:**

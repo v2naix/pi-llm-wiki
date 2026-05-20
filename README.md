@@ -49,15 +49,16 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 
 | Capability | Description |
 |------------|-------------|
+| 🏠 **Personal fallback** | Always-on `~/.llm-wiki/` vault — knowledge compounds across projects even when no project wiki exists |
 | 🔗 **Immutable source capture** | URLs, local files (PDF/md/txt/html/XML/JSON), or pasted text → structured source packets |
 | 🧠 **Automated ingestion** | `wiki_ingest` batch-processes sources into concept, entity, synthesis & analysis pages |
 | 🔍 **Full-text search** | Generated registry with keyword lookup across all pages and sources |
 | 🩺 **Mechanical linting** | Orphans, broken links, duplicate aliases, coverage gaps, stale captures |
 | 📊 **Dashboard** | `wiki_status` — counts, source states, recent activity |
 | 🤖 **Auto-update watch** | `wiki_watch` — schedule periodic discovery + ingest |
-| 🧠 **Auto-recall** | Wiki searched automatically before every turn — relevant pages injected into context |
+| 🧠 **Layered recall** | Searches both personal (`~/.llm-wiki/`) and project (`.llm-wiki/`) vaults — personal knowledge follows you everywhere |
 | 📝 **Auto-bootstrap** | Extension suggests creating a wiki when none exists in the current directory |
-| 💾 **Auto-capture** | `wiki_retro` — save atomic insights from completed tasks with one call |
+| 💾 **Lightweight capture** | `wiki_retro` — save atomic insights as a single markdown file; full 4-layer pipeline also available via `wiki_capture_source` |
 | 🌐 **MCP Server** | Use with Claude Code, Cursor, Windsurf via stdio MCP transport |
 | 📝 **Obsidian-friendly** | Folder-qualified wikilinks, stable source-ID citations, compatible vault |
 | 🛡️ **Guardrails** | Blocks direct edits to raw sources and generated metadata |
@@ -72,7 +73,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 |------|-------------|
 | `wiki_bootstrap` | Initialize a new wiki vault with config, templates, schema, and metadata |
 | `wiki_capture_source` | Capture a URL, local file, or pasted text into an immutable source packet |
-| `wiki_recall` | 🔄 **Auto-called at turn start** — search wiki for task-relevant pages |
+| `wiki_recall` | Search wiki for task-relevant pages — searches both personal (`~/.llm-wiki/`) and project (`.llm-wiki/`) vaults, deduplicated |
 | `wiki_retro` | Save atomic insights from completed tasks into the wiki |
 | `wiki_ingest` | Process uningested source packets into wiki pages (batch) |
 | `wiki_ensure_page` | Resolve or safely create entity / concept / synthesis / analysis pages |
@@ -96,6 +97,28 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | `/wiki-status` | Show a concise operational summary |
 | `/wiki-digest [--period daily\|weekly]` | Generate a digest of recent activity |
 | `/wiki-retro` | Save atomic insights from completed tasks |
+
+---
+
+## Layered Vault Architecture
+
+Knowledge follows you everywhere. pi-llm-wiki uses a layered vault system:
+
+| Layer | Location | Purpose |
+|-------|----------|---------|
+| 🏠 **Personal** | `~/.llm-wiki/` | Always active. Zero setup. Knowledge compounds across all your sessions — regardless of which project you're in. |
+| 📁 **Project** | `{project}/.llm-wiki/` | Explicit opt-in. Dedicated wiki per project, sharing personal knowledge when relevant. |
+| 🏢 **Company** (future) | git-tracked | Shared wiki across a team. `wiki_publish` promotes personal/project pages to the company wiki. |
+
+**How it works:**
+
+1. `resolveVaultRoot()` checks: cwd → walk up for `.llm-wiki/` → `~/.llm-wiki/`
+2. `wiki_recall` (layered) searches **both** personal and project vaults, merging results with vault labels
+3. Personal results are shown first in recall output, tagged as "📓 personal"
+4. `wiki_retro` writes to whichever vault is active (project takes priority)
+5. Set `WIKI_HOME` env var to override the personal wiki location
+
+This means: you can have a project wiki for team documentation **and** a personal wiki for your own notes, and recall searches both simultaneously.
 
 ---
 
@@ -309,7 +332,13 @@ The bundled `llm-wiki` skill teaches the model to:
 
 ## Architecture
 
-Four layers with clear ownership:
+### Vault Layers
+
+See the [Layered Vault Architecture](#layered-vault-architecture) section above for the personal/project/company layering.
+
+### Four-Layer Page Model
+
+Each wiki vault has four layers with clear ownership:
 
 ```
 .llm-wiki/raw/sources/SRC-*/     # Immutable source packets (extension-owned)

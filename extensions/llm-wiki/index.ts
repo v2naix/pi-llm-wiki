@@ -27,17 +27,19 @@ import {
 /**
  * @zosmaai/pi-llm-wiki — LLM Wiki extension for Pi
  *
- * Registers 11 custom tools and installs guardrails:
- * All 10 original tools + wiki_recall (auto-recall at session start)
+ * Registers 12 custom tools and installs guardrails:
+ * - wiki_recall (layered: personal + project vaults)
+ * - wiki_retro (lightweight: single markdown file)
+ * - wiki_capture_source (full 4-layer pipeline)
  *
  * Guardrails:
  * - Blocks direct edits to raw/** and meta/**
  * - Auto-rebuilds metadata after wiki/** edits
  *
- * Auto-recall:
- * - before_agent_start hook searches wiki for pages relevant to user prompt
- * - Injects matching knowledge as system context
- * - wiki_recall tool available for explicit deep searches
+ * Layered recall:
+ * - before_agent_start hook searches personal + project vaults
+ * - Injects matching knowledge as system context with vault labels
+ * - wiki_recall tool available for explicit task-specific searches
  */
 
 export default function (pi: ExtensionAPI) {
@@ -95,14 +97,14 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
-    ctx.ui.setStatus("llm-wiki", "🧠 LLM Wiki (12 tools, auto-recall active)");
+    ctx.ui.setStatus("llm-wiki", "🧠 LLM Wiki (12 tools, layered recall active)");
   });
 
-  // ─── Auto-recall + topic inference hook ─────────────
+  // ─── Layered recall + topic inference hook ──────────
   // Before each agent turn:
   // 1. If wiki was just auto-created, inject a directive to infer topic/mode
   //    from the user's first prompt and update config via wiki_bootstrap.
-  // 2. Search wiki for relevant pages and inject as system context.
+  // 2. Search both personal + project vaults for relevant pages.
   pi.on("before_agent_start", async (event, _ctx) => {
     const paths = resolveVaultPaths(process.cwd());
     if (!existsSync(join(paths.dotWiki, "config.json"))) {
@@ -145,7 +147,7 @@ ${projectHints}
 Then call wiki_bootstrap with the inferred topic and mode to finalize the setup. This is a one-time step.`;
     }
 
-    // Auto-recall: search wiki for relevant pages (layered: personal + project)
+    // Layered recall: search personal + project vaults for relevant pages
     if (prompt.trim()) {
       const results = searchWikiLayered(paths, prompt);
       if (results.length > 0) {

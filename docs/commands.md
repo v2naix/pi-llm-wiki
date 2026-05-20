@@ -22,7 +22,7 @@ The extension registers 12 tools the LLM can call directly:
 | --------------------- | ------------------------------------------- |
 | `wiki_bootstrap`      | Initialize a new vault                      |
 | `wiki_capture_source` | Capture URL/file/text into immutable packet |
-| `wiki_recall`         | 🔄 Auto-called at turn start — search wiki  |
+| `wiki_recall`         | Search personal + project wikis for task-relevant pages (layered) |
 | `wiki_retro`          | Save atomic insights from completed tasks   |
 | `wiki_ingest`         | Get batch of uningested sources             |
 | `wiki_ensure_page`    | Create canonical page from template         |

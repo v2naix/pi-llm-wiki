@@ -1,6 +1,37 @@
 # Architecture
 
-## Four Layers
+## Layered Vault Architecture
+
+pi-llm-wiki supports multiple vault layers that are searched together:
+
+| Layer | Location | Resolution | Searched by recall |
+|-------|----------|------------|-------------------|
+| **Personal** | `~/.llm-wiki/` | Fallback when no project wiki found | ✅ Always |
+| **Project** | `{project}/.llm-wiki/` | Walk up from cwd | ✅ When present |
+
+### Resolution Order
+
+1. Check current directory for `.llm-wiki/` → use as project wiki
+2. Walk up parent directories looking for `.llm-wiki/` → use as project wiki
+3. Check `WIKI_HOME` env var → use as personal wiki
+4. Fall back to `~/.llm-wiki/` → create if doesn't exist
+
+This means a project wiki is always preferred when you're inside a project that has one, but your personal wiki is always available as the fallback.
+
+### Dual-Vault Recall
+
+`wiki_recall` uses `searchWikiLayered()` which:
+1. Searches the **project vault** (if one exists in cwd)
+2. Searches the **personal vault** (`~/.llm-wiki/` or `WIKI_HOME`)
+3. Deduplicates results by page ID (project takes priority on duplicates)
+4. Tags personal results with "📓 personal" label
+5. Merges results: personal first, then project
+
+Results are injected into the context with vault source tags so the model can distinguish between personal and project knowledge.
+
+---
+
+## Four-Layer Page Model (within each vault)
 
 ```
 WIKI_ROOT/

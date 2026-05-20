@@ -6,6 +6,8 @@ Wiki configuration lives in `.llm-wiki/config.json`.
 
 ### Personal
 
+The personal vault lives at `~/.llm-wiki/` (or `$WIKI_HOME`) and is always available as a fallback when no project wiki exists. It accumulates knowledge across all your sessions.
+
 - Extra folders: `wiki/journal/`, `wiki/goals/`
 - Track: learning, books, health, reflections
 
@@ -25,9 +27,19 @@ Wiki configuration lives in `.llm-wiki/config.json`.
 
 ## Environment Variables
 
-| Variable                      | Default | Description                                     |
-| ----------------------------- | ------- | ----------------------------------------------- |
-| `WIKI_MARKITDOWN_TIMEOUT_MS` | 180000  | Timeout (ms) for MarkItDown PDF/text extraction |
+| Variable                      | Default     | Description                                     |
+| ----------------------------- | ----------- | ----------------------------------------------- |
+| `WIKI_HOME`                   | `~/.llm-wiki` | Override the personal wiki vault location     |
+| `WIKI_MARKITDOWN_TIMEOUT_MS` | 180000      | Timeout (ms) for MarkItDown PDF/text extraction |
+
+## Vault Resolution
+
+The vault root is resolved in this priority order:
+
+1. **Project vault**: walk up from current directory looking for `.llm-wiki/`
+2. **Personal vault**: fall back to `$WIKI_HOME` or `~/.llm-wiki/`
+
+This means when you're in a project with its own `.llm-wiki/`, that project wiki is active. When you're outside any project wiki, your personal `~/.llm-wiki/` takes over automatically.
 
 ## Page Frontmatter
 
