@@ -58,7 +58,7 @@ export function saveInsight(
     "",
     "## Related",
     "",
-    "_(Add [[wikilinks]] to related pages)_",
+    "_Add links to related pages._",
     "",
   ]
     .filter((l) => l !== "")

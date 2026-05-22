@@ -73,6 +73,9 @@ describe("wiki retro", () => {
     expect(sourcePage).toContain("status: insight");
     expect(sourcePage).toContain("This is a test insight.");
     expect(sourcePage).toContain("category: devops");
+    expect(sourcePage).toContain("## Related");
+    expect(sourcePage).toContain("_Add links to related pages._");
+    expect(sourcePage).not.toContain("[[wikilinks]]");
   });
 
   it("should save an insight without a category", async () => {
