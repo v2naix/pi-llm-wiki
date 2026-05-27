@@ -118,6 +118,65 @@ describe("wiki recall", () => {
     expect(results.some((r) => r.type === "entity")).toBe(true);
   });
 
+  it("should find pages matching multiline aliases and recall triggers", () => {
+    const pagePath = join(wikiDir, ".llm-wiki", "wiki", "analyses", "continue-learning-pi.md");
+    writeFileSync(
+      pagePath,
+      [
+        "---",
+        "type: analysis",
+        "title: Pi 学习入口",
+        "aliases:",
+        "  - 继续学习pi",
+        "  - 学习pi",
+        "recall_triggers:",
+        "  - pi下一节",
+        "created: 2026-05-27",
+        "updated: 2026-05-27",
+        "---",
+        "",
+        "# Recall 提示",
+        "",
+        "命中后读取 Pi 学习进度。",
+      ].join("\n"),
+      "utf-8",
+    );
+
+    const paths = getVaultPaths(wikiDir);
+    rebuildMetadataLight(paths);
+    const results = searchWiki(paths, "继续学习pi");
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results[0].id).toBe("analyses/continue-learning-pi");
+  });
+
+  it("should find pages matching body text when metadata is sparse", () => {
+    createRegistryPage(
+      "sparse-page",
+      "concept",
+      "Unrelated Title",
+      "This body explains codex relay provider credential precedence.",
+    );
+    const paths = getVaultPaths(wikiDir);
+    rebuildMetadataLight(paths);
+    const results = searchWiki(paths, "credential precedence");
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results[0].id).toBe("concepts/sparse-page");
+  });
+
+  it("should find mixed Chinese and Latin short queries without spaces", () => {
+    createRegistryPage(
+      "pi-learning-progress",
+      "synthesis",
+      "Pi 学习进度",
+      "下一步学习 Pi 交互模式。",
+    );
+    const paths = getVaultPaths(wikiDir);
+    rebuildMetadataLight(paths);
+    const results = searchWiki(paths, "学习pi");
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results.some((r) => r.id === "concepts/pi-learning-progress")).toBe(true);
+  });
+
   it("should return pages with content preview", () => {
     createRegistryPage(
       "attention-is-all-you-need",

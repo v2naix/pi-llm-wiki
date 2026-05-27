@@ -184,6 +184,22 @@ export function nextSourceId(paths: VaultPaths): string {
   return `${prefix}-${String(num + 1).padStart(3, "0")}`;
 }
 
+/** Parse a small, dependency-free YAML scalar/inline-array value. */
+function parseFrontmatterValue(raw: string, unquote = false): unknown {
+  const trimmed = raw.trim();
+  const unquoted = (value: string) => value.replace(/^(["'])(.*)\1$/, "$2").trim();
+
+  if (!trimmed) return "";
+
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    const inner = trimmed.slice(1, -1).trim();
+    if (!inner) return [];
+    return inner.split(",").map((item) => unquoted(item.trim()));
+  }
+
+  return unquote ? unquoted(trimmed) : trimmed;
+}
+
 /** Extract frontmatter from markdown. */
 export function parseFrontmatter(content: string): {
   frontmatter: Record<string, unknown>;
@@ -194,12 +210,33 @@ export function parseFrontmatter(content: string): {
 
   const frontmatter: Record<string, unknown> = {};
   const lines = match[1].split("\n");
+  let currentListKey: string | null = null;
+
   for (const line of lines) {
+    const listMatch = line.match(/^\s*-\s+(.*)$/);
+    if (listMatch && currentListKey) {
+      const current = frontmatter[currentListKey];
+      const list = Array.isArray(current) ? current : [];
+      list.push(parseFrontmatterValue(listMatch[1], true));
+      frontmatter[currentListKey] = list;
+      continue;
+    }
+
     const idx = line.indexOf(":");
-    if (idx > 0) {
-      const key = line.slice(0, idx).trim();
-      const val = line.slice(idx + 1).trim();
-      frontmatter[key] = val;
+    if (idx <= 0) {
+      currentListKey = null;
+      continue;
+    }
+
+    const key = line.slice(0, idx).trim();
+    const val = line.slice(idx + 1).trim();
+
+    if (!val) {
+      frontmatter[key] = [];
+      currentListKey = key;
+    } else {
+      frontmatter[key] = parseFrontmatterValue(val);
+      currentListKey = null;
     }
   }
   return { frontmatter, body: match[2] };

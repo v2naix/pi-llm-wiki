@@ -7,6 +7,7 @@ import {
   type VaultPaths,
   getPersonalWikiPaths,
   isPersonalVault,
+  parseFrontmatter,
   readJson,
   resolveVaultPaths,
 } from "./utils.js";
@@ -28,6 +29,98 @@ export interface RecallResult {
   vaultLabel?: string;
 }
 
+type Scored = { id: string; entry: Registry["pages"][string]; score: number; pagePath: string };
+
+/**
+ * Normalize text for recall matching.
+ *
+ * Wiki queries are often short and multilingual (for example: "继续学习pi").
+ * Normalization keeps CJK characters intact, lowercases Latin text, removes
+ * punctuation boundaries, and makes hyphenated page IDs match space-separated
+ * queries.
+ */
+function normalizeText(value: unknown): string {
+  return flattenSearchValue(value)
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[\-_./\\]+/g, " ")
+    .replace(/[\p{P}\p{S}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactText(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+function flattenSearchValue(value: unknown): string {
+  if (value == null) return "";
+  if (Array.isArray(value)) return value.map(flattenSearchValue).join(" ");
+  if (typeof value === "object") return Object.values(value).map(flattenSearchValue).join(" ");
+  return String(value);
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+/**
+ * Tokenize with support for CJK short queries and English/kebab-case terms.
+ *
+ * Besides whitespace tokens, this returns Latin/digit runs ("pi", "recall")
+ * and overlapping CJK bigrams/trigrams. The full normalized query is also kept
+ * so exact short phrases still rank highest.
+ */
+function queryTerms(query: string): string[] {
+  const normalized = normalizeText(query);
+  const compact = compactText(normalized);
+  const terms: string[] = [];
+
+  if (normalized) terms.push(normalized);
+  if (compact && compact !== normalized) terms.push(compact);
+
+  for (const part of normalized.split(/\s+/)) {
+    if (part.length >= 2) terms.push(part);
+  }
+
+  const latinRuns = normalized.match(/[a-z0-9]{2,}/g) ?? [];
+  terms.push(...latinRuns);
+
+  const cjkRuns =
+    normalized.match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+/gu) ?? [];
+  for (const run of cjkRuns) {
+    for (let size = 2; size <= 3; size++) {
+      if (run.length < size) continue;
+      for (let i = 0; i <= run.length - size; i++) {
+        terms.push(run.slice(i, i + size));
+      }
+    }
+  }
+
+  return unique(terms).slice(0, 30);
+}
+
+function includesTerm(haystack: string, term: string): boolean {
+  if (!haystack || !term) return false;
+  return haystack.includes(term) || compactText(haystack).includes(compactText(term));
+}
+
+function scoreField(value: unknown, terms: string[], weight: number): number {
+  const text = normalizeText(value);
+  if (!text) return 0;
+
+  let score = 0;
+  for (const term of terms) {
+    if (includesTerm(text, term)) score += weight;
+  }
+  return score;
+}
+
+function pagePreview(content: string): string {
+  const { body } = parseFrontmatter(content);
+  return body.trim().slice(0, 200).replace(/\n/g, " ");
+}
+
 /**
  * Search a single vault's registry for pages matching a query.
  * Returns up to `maxResults` matches, each with a content preview.
@@ -39,51 +132,64 @@ export function searchWiki(paths: VaultPaths, query: string, maxResults = 5): Re
     pages: {},
   });
 
-  const q = query.toLowerCase();
-  const terms = q
-    .split(/\s+/)
-    .filter((t) => t.length > 2)
-    .slice(0, 10);
-
+  const terms = queryTerms(query);
   if (terms.length === 0) return [];
 
-  type Scored = { id: string; entry: Registry["pages"][string]; score: number };
   const scored: Scored[] = [];
 
   for (const [id, entry] of Object.entries(registry.pages)) {
+    const pagePath = join(paths.wiki, `${id}.md`);
+    const content = existsSync(pagePath) ? readFileSync(pagePath, "utf-8") : "";
+    const { frontmatter, body } = parseFrontmatter(content);
+
     let score = 0;
-    const title = String(entry.title || "").toLowerCase();
-    const type = String(entry.type || "").toLowerCase();
 
-    for (const term of terms) {
-      if (id.toLowerCase().includes(term)) score += 3;
-      if (title.includes(term)) score += 4;
-      if (type.includes(term)) score += 1;
-    }
+    // Strong identifiers: exact command/short-query aliases should win.
+    score += scoreField(id, terms, 3);
+    score += scoreField(entry.title, terms, 5);
+    score += scoreField(frontmatter.title, terms, 5);
+    score += scoreField(entry.type, terms, 1);
 
-    // Boost if query terms appear in tags/categories
-    const tags = String(entry.tags || entry.category || entry.domain || "");
-    for (const term of terms) {
-      if (tags.toLowerCase().includes(term)) score += 2;
-    }
+    // Recall-oriented metadata. Arrays are supported by parseFrontmatter and
+    // legacy comma/bracket strings still flatten into searchable text.
+    score += scoreField(entry.aliases, terms, 6);
+    score += scoreField(frontmatter.aliases, terms, 6);
+    score += scoreField(entry.recall_triggers, terms, 7);
+    score += scoreField(frontmatter.recall_triggers, terms, 7);
+    score += scoreField(entry.summary, terms, 3);
+    score += scoreField(frontmatter.summary, terms, 3);
+    score += scoreField(entry.description, terms, 3);
+    score += scoreField(frontmatter.description, terms, 3);
+
+    // General metadata from the registry/frontmatter.
+    score += scoreField(entry.tags, terms, 2);
+    score += scoreField(entry.category, terms, 2);
+    score += scoreField(entry.domain, terms, 2);
+    score += scoreField(frontmatter.tags, terms, 2);
+    score += scoreField(frontmatter.category, terms, 2);
+    score += scoreField(frontmatter.domain, terms, 2);
+
+    // Body search makes the wiki useful even when registry metadata is sparse.
+    // Headings get a stronger boost because they are human-authored labels.
+    const headings = body
+      .split("\n")
+      .filter((line) => line.trim().startsWith("#"))
+      .join(" ");
+    score += scoreField(headings, terms, 4);
+    score += scoreField(body, terms, 1);
 
     if (score > 0) {
-      scored.push({ id, entry, score });
+      scored.push({ id, entry, score, pagePath });
     }
   }
 
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
   const top = scored.slice(0, maxResults);
 
-  return top.map(({ id, entry }) => {
-    // Try to read page content for preview
+  return top.map(({ id, entry, pagePath }) => {
     let preview = "";
-    const pagePath = join(paths.wiki, `${id}.md`);
     if (existsSync(pagePath)) {
-      const content = readFileSync(pagePath, "utf-8");
-      // Strip frontmatter
-      const body = content.replace(/^---[\s\S]*?---\n/, "").trim();
-      preview = body.slice(0, 200).replace(/\n/g, " ");
+      preview = pagePreview(readFileSync(pagePath, "utf-8"));
     }
 
     return {
@@ -96,9 +202,6 @@ export function searchWiki(paths: VaultPaths, query: string, maxResults = 5): Re
   });
 }
 
-/**
- * Format recall results as a compact system-prompt section.
- */
 /**
  * Search both project/primary vault and personal vault, merging results.
  * Personal results are appended after primary results, deduplicated by page ID.
@@ -241,25 +344,15 @@ export function registerWikiRecall(pi: ExtensionAPI): void {
         content: [
           {
             type: "text",
-            text: [
-              `🧠 **${results.length} wiki page(s) relevant** to "${params.query}"${layerTag}:`,
-              "",
-              ...results.map(
-                (r) =>
-                  `- ${r.vaultLabel || "📁"} [[${r.id}]] — *${r.type}* — ${r.title}${
-                    r.preview ? `\n  > ${r.preview.slice(0, 150)}` : ""
-                  }`,
-              ),
-              "",
-              "Use `read` on any page for full content.",
-              "Use `wiki_retro` to save new insights from this task.",
-            ].join("\n"),
+            text: `Found ${results.length} wiki page(s) matching "${params.query}"${layerTag}:\n\n${results
+              .map((r) => {
+                const vault = r.vaultLabel ? ` ${r.vaultLabel}` : "";
+                return `## [[${r.id}]] — ${r.title}${vault}\nType: ${r.type}\nPath: ${r.path}\n\n${r.preview}`;
+              })
+              .join("\n\n---\n\n")}`,
           },
         ],
-        details: { query: params.query, matches: results.map((r) => r.id) } as Record<
-          string,
-          unknown
-        >,
+        details: { query: params.query, matches: results } as Record<string, unknown>,
       };
     },
   });
