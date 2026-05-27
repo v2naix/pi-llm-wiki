@@ -2,7 +2,7 @@
 
 # @zosmaai/pi-llm-wiki
 
-**English** | [中文](./README.zh.md) | [Español](./README.es.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md) | [Русский](./README.ru.md) | [한국어](./README.ko.md) | [हिंदी](./README.hi.md)
+[English](./README.md) | [中文](./README.zh.md) | [Español](./README.es.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md) | [Русский](./README.ru.md) | **한국어** | [हिंदी](./README.hi.md)
 
 [![CI](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/ci.yml/badge.svg)](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@zosmaai/pi-llm-wiki)](https://www.npmjs.com/package/@zosmaai/pi-llm-wiki)
@@ -30,14 +30,14 @@
 
 <br/>
 
-**Self-maintaining, Obsidian-compatible knowledge base for [pi](https://pi.dev).**
+**[pi](https://pi.dev)를 위한 자체 유지 관리, Obsidian 호환 지식 베이스입니다. Andrej Karpathy의 LLM Wiki 패턴을 따릅니다.**
 Follows Andrej Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
-Turn raw sources (URLs, PDFs, markdown, JSON, XML) into a durable, interlinked, LLM-maintained wiki that compounds over time.
+원시 소스(URL, PDF, 마크다운, JSON, XML)를 시간이 지남에 따라 축적되는 내구성 있고 상호 연결된 LLM 유지 관리 Wiki로 변환합니다.
 
 ---
 
-## Quick Start
+## 빠른 시작
 
 ```bash
 pi install npm:@zosmaai/pi-llm-wiki
@@ -53,22 +53,22 @@ The extension will proactively suggest creating a wiki on your first session. Al
 
 ---
 
-## Why This Package?
+## 이 패키지를 사용하는 이유
 
-Most file-based LLM workflows behave like one-shot RAG: the model searches raw documents every time you ask a question. Synthesis is ephemeral.
+대부분의 파일 기반 LLM 워크플로는 원샷 RAG처럼 동작합니다: 모델이 질문할 때마다 원시 문서를 검색합니다. 합성은 일시적입니다.
 
-**pi-llm-wiki** creates a middle layer:
+**pi-llm-wiki**는 중간 계층을 만듭니다:
 
-- **Raw source packets** preserve source-of-truth inputs
-- **Source pages** summarize what each source says
-- **Canonical wiki pages** track what the wiki currently believes
-- **Generated metadata** keeps everything searchable and navigable
+- **원시 소스 패킷은 원본 입력을 보존**
+- **소스 페이지는 각 소스가 말하는 내용을 요약**
+- **표준 Wiki 페이지는 Wiki가 현재 믿고 있는 것을 추적**
+- **생성된 메타데이터는 모든 것을 검색 가능하고 탐색 가능하게 유지**
 
-The result is a wiki that **compounds** as you capture sources, ask questions, and file durable analyses.
+결과는 소스를 캡처하고, 질문하고, 내구성 있는 분석을 보관할수록 축적되는 Wiki입니다.
 
 ---
 
-## Features
+## 기능
 
 | Capability | Description |
 |------------|-------------|
@@ -90,7 +90,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 
 ---
 
-## Tools
+## 도구
 
 | Tool | Description |
 |------|-------------|
@@ -107,7 +107,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | `wiki_log_event` | Append a structured event to the wiki activity log |
 | `wiki_watch` | Schedule automatic wiki updates (daily / weekly / hourly) |
 
-### Slash Commands
+### 슬래시 명령
 
 | Command | Description |
 |---------|-------------|
@@ -123,7 +123,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 
 ---
 
-## Layered Vault Architecture
+## 계층형 Vault 아키텍처
 
 Knowledge follows you everywhere. pi-llm-wiki uses a layered vault system:
 
@@ -133,7 +133,7 @@ Knowledge follows you everywhere. pi-llm-wiki uses a layered vault system:
 | 📁 **Project** | `{project}/.llm-wiki/` | Explicit opt-in. Dedicated wiki per project, sharing personal knowledge when relevant. |
 | 🏢 **Company** (future) | git-tracked | Shared wiki across a team. `wiki_publish` promotes personal/project pages to the company wiki. |
 
-**How it works:**
+**작동 방식:**
 
 1. `resolveVaultRoot()` checks: cwd → walk up for `.llm-wiki/` → `~/.llm-wiki/`
 2. `wiki_recall` (layered) searches **both** personal and project vaults, merging results with vault labels
@@ -145,9 +145,9 @@ This means: you can have a project wiki for team documentation **and** a persona
 
 ---
 
-## Quick Start (Detailed)
+## 빠른 시작 (상세)
 
-### 1) Create a new wiki
+### 1) 새 Wiki 만들기
 
 ```bash
 mkdir my-wiki
@@ -155,7 +155,7 @@ cd my-wiki
 pi
 ```
 
-Ask pi:
+pi에게 물어보세요:
 
 ```
 Initialize an llm wiki here for AI research.
@@ -173,7 +173,7 @@ This calls `wiki_bootstrap` and creates:
 └── WIKI_SCHEMA.md
 ```
 
-### 2) Capture a source
+### 2) 소스 캡처
 
 ```
 Capture this article into the wiki: https://example.com/some-article
@@ -187,7 +187,7 @@ Capture this PDF into the wiki: ./papers/context-windows.pdf
 Capture these notes into the wiki: ...pasted text...
 ```
 
-### 3) Integrate the source
+### 3) 소스 통합
 
 1. Capture the source
 2. Read `.llm-wiki/wiki/sources/SRC-*.md`
@@ -197,7 +197,7 @@ Capture these notes into the wiki: ...pasted text...
 6. Update concept / entity / synthesis pages with citations
 7. Mark the integration with `wiki_log_event kind=integrate`
 
-### 4) Query the wiki
+### 4) Wiki 쿼리
 
 ```
 Based on the wiki, what are the main tradeoffs between long-context models and RAG?
@@ -211,7 +211,7 @@ Answer the question and file the result as an analysis page.
 
 ---
 
-## Vault Layout
+## Vault 레이아웃
 
 ```
 my-wiki/
@@ -241,7 +241,7 @@ my-wiki/
    └─ WIKI_SCHEMA.md               # Operating manual
 ```
 
-### Ownership Model
+### 소유권 모델
 
 | Path | Owner | Rule |
 |------|-------|------|
@@ -259,9 +259,9 @@ my-wiki/
 
 ---
 
-## Linking & Citation Style
+## 링크 및 인용 스타일
 
-### Internal Navigation
+### 내부 탐색
 
 ```markdown
 [[concepts/retrieval-augmented-generation]]
@@ -269,7 +269,7 @@ my-wiki/
 [[syntheses/long-context-vs-rag]]
 ```
 
-### Factual Citations
+### 사실 인용
 
 ```markdown
 [[sources/SRC-2026-04-04-001|SRC-2026-04-04-001]]
@@ -279,7 +279,7 @@ Stable source-page IDs keep provenance stable even if titles change.
 
 ---
 
-## Guardrails
+## 가드레일
 
 The extension **blocks** direct tool-call edits to:
 
@@ -295,7 +295,7 @@ If the model directly edits `.llm-wiki/wiki/**` using Pi's built-in `write` or `
 
 ---
 
-## Source Packet Format
+## 소스 패킷 형식
 
 Each captured source is stored as a structured packet:
 
@@ -311,7 +311,7 @@ This preserves both the **original artifact** and a **normalized extracted view*
 
 ---
 
-## MCP Server
+## MCP 서버
 
 Use the wiki from **any MCP-compatible tool** — Claude Code, Cursor, Windsurf, and others.
 
@@ -325,7 +325,7 @@ The package ships a standalone MCP server exposing 5 wiki tools over stdio:
 | `wiki_retro` | Save atomic insights |
 | `wiki_capture_source` | Capture text as a source packet |
 
-### Usage
+### 사용법
 
 ```bash
 # Auto-discovered by pi:
@@ -339,7 +339,7 @@ Set `WIKI_ROOT` to your wiki vault directory. If unset, the server auto-detects 
 
 ---
 
-## Skill Behavior
+## 스킬 동작
 
 The bundled `llm-wiki` skill teaches the model to:
 
@@ -353,13 +353,13 @@ The bundled `llm-wiki` skill teaches the model to:
 
 ---
 
-## Architecture
+## 아키텍처
 
-### Vault Layers
+### Vault 계층
 
 See the [Layered Vault Architecture](#layered-vault-architecture) section above for the personal/project/company layering.
 
-### Four-Layer Page Model
+### 4계층 페이지 모델
 
 Each wiki vault has four layers with clear ownership:
 
@@ -374,7 +374,7 @@ Read [docs/architecture.md](docs/architecture.md) for the full design document.
 
 ---
 
-## Documentation
+## 문서
 
 | Document | What it covers |
 |----------|---------------|
@@ -386,17 +386,17 @@ Read [docs/architecture.md](docs/architecture.md) for the full design document.
 
 ---
 
-## Contributing
+## 기여
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, test patterns, and PR workflow.
 
 ---
 
-## Star History
+## 스타 기록
 
 [![Star History Chart](https://api.star-history.com/svg?repos=zosmaai/pi-llm-wiki&type=Date)](https://star-history.com/#zosmaai/pi-llm-wiki&Date)
 
-## Contributors
+## 기여자
 
 <a href="https://github.com/zosmaai/pi-llm-wiki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=zosmaai/pi-llm-wiki" alt="Contributors" />
@@ -409,6 +409,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, test patterns, and
   <a href="https://pi.dev">pi.dev</a> · <a href="https://github.com/zosmaai/pi-llm-wiki/issues">Issues</a>
 </div>
 
-## License
+## 라이선스
 
 MIT

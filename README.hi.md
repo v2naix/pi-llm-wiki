@@ -2,7 +2,7 @@
 
 # @zosmaai/pi-llm-wiki
 
-**English** | [中文](./README.zh.md) | [Español](./README.es.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md) | [Русский](./README.ru.md) | [한국어](./README.ko.md) | [हिंदी](./README.hi.md)
+[English](./README.md) | [中文](./README.zh.md) | [Español](./README.es.md) | [日本語](./README.ja.md) | [Deutsch](./README.de.md) | [Français](./README.fr.md) | [Português](./README.pt.md) | [Русский](./README.ru.md) | [한국어](./README.ko.md) | **हिंदी**
 
 [![CI](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/ci.yml/badge.svg)](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@zosmaai/pi-llm-wiki)](https://www.npmjs.com/package/@zosmaai/pi-llm-wiki)
@@ -30,14 +30,14 @@
 
 <br/>
 
-**Self-maintaining, Obsidian-compatible knowledge base for [pi](https://pi.dev).**
+**[pi](https://pi.dev) के लिए स्व-रखरखाव, Obsidian-संगत ज्ञानकोष। Andrej Karpathy के LLM Wiki पैटर्न का अनुसरण करता है।**
 Follows Andrej Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
 
-Turn raw sources (URLs, PDFs, markdown, JSON, XML) into a durable, interlinked, LLM-maintained wiki that compounds over time.
+कच्चे स्रोतों (URL, PDF, मार्कडाउन, JSON, XML) को एक टिकाऊ, आपस में जुड़े, LLM-अनुरक्षित Wiki में बदलें जो समय के साथ संचित होता रहे।
 
 ---
 
-## Quick Start
+## त्वरित शुरुआत
 
 ```bash
 pi install npm:@zosmaai/pi-llm-wiki
@@ -53,22 +53,22 @@ The extension will proactively suggest creating a wiki on your first session. Al
 
 ---
 
-## Why This Package?
+## यह पैकेज क्यों?
 
-Most file-based LLM workflows behave like one-shot RAG: the model searches raw documents every time you ask a question. Synthesis is ephemeral.
+अधिकांश फ़ाइल-आधारित LLM वर्कफ़्लो एक-शॉट RAG की तरह व्यवहार करते हैं: हर बार जब आप प्रश्न पूछते हैं तो मॉडल कच्चे दस्तावेज़ खोजता है। संश्लेषण क्षणिक होता है।
 
-**pi-llm-wiki** creates a middle layer:
+**pi-llm-wiki** एक मध्य परत बनाता है:
 
-- **Raw source packets** preserve source-of-truth inputs
-- **Source pages** summarize what each source says
-- **Canonical wiki pages** track what the wiki currently believes
-- **Generated metadata** keeps everything searchable and navigable
+- **कच्चे स्रोत पैकेट मूल इनपुट को संरक्षित करते हैं**
+- **स्रोत पृष्ठ संक्षेप में बताते हैं कि प्रत्येक स्रोत क्या कहता है**
+- **विहित Wiki पृष्ठ ट्रैक करते हैं कि Wiki वर्तमान में क्या मानता है**
+- **उत्पन्न मेटाडेटा सब कुछ खोजने योग्य और नेविगेट करने योग्य रखता है**
 
-The result is a wiki that **compounds** as you capture sources, ask questions, and file durable analyses.
+परिणाम एक ऐसा Wiki है जो स्रोतों को कैप्चर करने, प्रश्न पूछने और स्थायी विश्लेषण संग्रहीत करने पर संचित होता है।
 
 ---
 
-## Features
+## विशेषताएँ
 
 | Capability | Description |
 |------------|-------------|
@@ -90,7 +90,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 
 ---
 
-## Tools
+## उपकरण
 
 | Tool | Description |
 |------|-------------|
@@ -107,7 +107,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | `wiki_log_event` | Append a structured event to the wiki activity log |
 | `wiki_watch` | Schedule automatic wiki updates (daily / weekly / hourly) |
 
-### Slash Commands
+### स्लैश कमांड
 
 | Command | Description |
 |---------|-------------|
@@ -123,7 +123,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 
 ---
 
-## Layered Vault Architecture
+## स्तरित Vault आर्किटेक्चर
 
 Knowledge follows you everywhere. pi-llm-wiki uses a layered vault system:
 
@@ -133,7 +133,7 @@ Knowledge follows you everywhere. pi-llm-wiki uses a layered vault system:
 | 📁 **Project** | `{project}/.llm-wiki/` | Explicit opt-in. Dedicated wiki per project, sharing personal knowledge when relevant. |
 | 🏢 **Company** (future) | git-tracked | Shared wiki across a team. `wiki_publish` promotes personal/project pages to the company wiki. |
 
-**How it works:**
+**यह कैसे काम करता है:**
 
 1. `resolveVaultRoot()` checks: cwd → walk up for `.llm-wiki/` → `~/.llm-wiki/`
 2. `wiki_recall` (layered) searches **both** personal and project vaults, merging results with vault labels
@@ -145,9 +145,9 @@ This means: you can have a project wiki for team documentation **and** a persona
 
 ---
 
-## Quick Start (Detailed)
+## त्वरित शुरुआत (विस्तृत)
 
-### 1) Create a new wiki
+### 1) नया Wiki बनाएँ
 
 ```bash
 mkdir my-wiki
@@ -155,7 +155,7 @@ cd my-wiki
 pi
 ```
 
-Ask pi:
+pi से पूछें:
 
 ```
 Initialize an llm wiki here for AI research.
@@ -173,7 +173,7 @@ This calls `wiki_bootstrap` and creates:
 └── WIKI_SCHEMA.md
 ```
 
-### 2) Capture a source
+### 2) स्रोत कैप्चर करें
 
 ```
 Capture this article into the wiki: https://example.com/some-article
@@ -187,7 +187,7 @@ Capture this PDF into the wiki: ./papers/context-windows.pdf
 Capture these notes into the wiki: ...pasted text...
 ```
 
-### 3) Integrate the source
+### 3) स्रोत को एकीकृत करें
 
 1. Capture the source
 2. Read `.llm-wiki/wiki/sources/SRC-*.md`
@@ -197,7 +197,7 @@ Capture these notes into the wiki: ...pasted text...
 6. Update concept / entity / synthesis pages with citations
 7. Mark the integration with `wiki_log_event kind=integrate`
 
-### 4) Query the wiki
+### 4) Wiki से प्रश्न करें
 
 ```
 Based on the wiki, what are the main tradeoffs between long-context models and RAG?
@@ -211,7 +211,7 @@ Answer the question and file the result as an analysis page.
 
 ---
 
-## Vault Layout
+## Vault लेआउट
 
 ```
 my-wiki/
@@ -241,7 +241,7 @@ my-wiki/
    └─ WIKI_SCHEMA.md               # Operating manual
 ```
 
-### Ownership Model
+### स्वामित्व मॉडल
 
 | Path | Owner | Rule |
 |------|-------|------|
@@ -259,9 +259,9 @@ my-wiki/
 
 ---
 
-## Linking & Citation Style
+## लिंकिंग और उद्धरण शैली
 
-### Internal Navigation
+### आंतरिक नेविगेशन
 
 ```markdown
 [[concepts/retrieval-augmented-generation]]
@@ -269,7 +269,7 @@ my-wiki/
 [[syntheses/long-context-vs-rag]]
 ```
 
-### Factual Citations
+### तथ्यात्मक उद्धरण
 
 ```markdown
 [[sources/SRC-2026-04-04-001|SRC-2026-04-04-001]]
@@ -279,7 +279,7 @@ Stable source-page IDs keep provenance stable even if titles change.
 
 ---
 
-## Guardrails
+## सुरक्षा उपाय
 
 The extension **blocks** direct tool-call edits to:
 
@@ -295,7 +295,7 @@ If the model directly edits `.llm-wiki/wiki/**` using Pi's built-in `write` or `
 
 ---
 
-## Source Packet Format
+## स्रोत पैकेट प्रारूप
 
 Each captured source is stored as a structured packet:
 
@@ -311,7 +311,7 @@ This preserves both the **original artifact** and a **normalized extracted view*
 
 ---
 
-## MCP Server
+## MCP सर्वर
 
 Use the wiki from **any MCP-compatible tool** — Claude Code, Cursor, Windsurf, and others.
 
@@ -325,7 +325,7 @@ The package ships a standalone MCP server exposing 5 wiki tools over stdio:
 | `wiki_retro` | Save atomic insights |
 | `wiki_capture_source` | Capture text as a source packet |
 
-### Usage
+### उपयोग
 
 ```bash
 # Auto-discovered by pi:
@@ -339,7 +339,7 @@ Set `WIKI_ROOT` to your wiki vault directory. If unset, the server auto-detects 
 
 ---
 
-## Skill Behavior
+## स्किल व्यवहार
 
 The bundled `llm-wiki` skill teaches the model to:
 
@@ -353,13 +353,13 @@ The bundled `llm-wiki` skill teaches the model to:
 
 ---
 
-## Architecture
+## आर्किटेक्चर
 
-### Vault Layers
+### Vault स्तर
 
 See the [Layered Vault Architecture](#layered-vault-architecture) section above for the personal/project/company layering.
 
-### Four-Layer Page Model
+### चार-स्तरीय पृष्ठ मॉडल
 
 Each wiki vault has four layers with clear ownership:
 
@@ -374,7 +374,7 @@ Read [docs/architecture.md](docs/architecture.md) for the full design document.
 
 ---
 
-## Documentation
+## दस्तावेज़ीकरण
 
 | Document | What it covers |
 |----------|---------------|
@@ -386,17 +386,17 @@ Read [docs/architecture.md](docs/architecture.md) for the full design document.
 
 ---
 
-## Contributing
+## योगदान
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, test patterns, and PR workflow.
 
 ---
 
-## Star History
+## स्टार इतिहास
 
 [![Star History Chart](https://api.star-history.com/svg?repos=zosmaai/pi-llm-wiki&type=Date)](https://star-history.com/#zosmaai/pi-llm-wiki&Date)
 
-## Contributors
+## योगदानकर्ता
 
 <a href="https://github.com/zosmaai/pi-llm-wiki/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=zosmaai/pi-llm-wiki" alt="Contributors" />
@@ -409,6 +409,6 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, test patterns, and
   <a href="https://pi.dev">pi.dev</a> · <a href="https://github.com/zosmaai/pi-llm-wiki/issues">Issues</a>
 </div>
 
-## License
+## लाइसेंस
 
 MIT
