@@ -435,6 +435,13 @@ Thanks to everyone who has contributed! This list is regenerated automatically b
                     <sub><b>Shanvit S Shetty</b></sub>
                 </a>
             </td>
+            <td align="center">
+                <a href="https://github.com/CelestialCreator">
+                    <img src="https://avatars.githubusercontent.com/u/177931942?v=4" width="64;" alt="CelestialCreator"/>
+                    <br />
+                    <sub><b>Akshay</b></sub>
+                </a>
+            </td>
 		</tr>
 	<tbody>
 </table>
