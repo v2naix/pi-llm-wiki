@@ -74,9 +74,7 @@ describe("wiki_watch — issue #81 regressions", () => {
   it("description and output make it explicit that nothing is scheduled", async () => {
     const tool = captureWatchTool();
     expect(tool.description.toLowerCase()).toMatch(/print|return/);
-    expect(tool.description.toLowerCase()).not.toMatch(
-      /^schedule automatic wiki updates/i,
-    );
+    expect(tool.description.toLowerCase()).not.toMatch(/^schedule automatic wiki updates/i);
 
     const result = await run("weekly");
     const text = result.content.map((c) => c.text).join("\n");
