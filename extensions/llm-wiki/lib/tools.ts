@@ -1233,10 +1233,7 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
       }
 
       // 5-field POSIX crontab expressions (min hour dom month dow).
-      const intervals: Record<
-        string,
-        { cron: string; label: string }
-      > = {
+      const intervals: Record<string, { cron: string; label: string }> = {
         daily: { cron: "0 8 * * *", label: "Daily at 8:00 AM" },
         weekly: { cron: "0 9 * * 1", label: "Weekly on Monday at 9:00 AM" },
         hourly: { cron: "0 * * * *", label: "Every hour" },
@@ -1274,7 +1271,7 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
             type: "text",
             text: [
               `⏰ To set up ${config.label} wiki updates, add this line to your crontab.`,
-              `**This tool only prints the line — it does not install it.**`,
+              "**This tool only prints the line — it does not install it.**",
               "",
               "```bash",
               "crontab -e",
