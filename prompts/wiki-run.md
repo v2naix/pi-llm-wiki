@@ -24,6 +24,8 @@ $ARGUMENTS
 
 ### Scheduling
 
-If `--schedule` is provided, call `wiki_watch(interval=<daily|weekly>)` to set up automatic updates.
+If `--schedule` is provided, call `wiki_watch(interval=<daily|weekly|hourly>)`.
 
-If `--schedule hourly` is provided, call `wiki_watch(interval=hourly)`.
+**Important:** `wiki_watch` does NOT install a schedule. It only prints a `crontab` line.
+Report the printed line to the user verbatim and tell them to install it themselves with
+`crontab -e`. Do not claim the schedule is active until they confirm they have done so.

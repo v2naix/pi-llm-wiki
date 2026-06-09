@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- **`wiki_watch` referred to a fictional `schedule_prompt` tool** (Issue #81): `wiki_watch` emitted instructions to run `schedule_prompt action=add ...` — a tool that doesn't exist in pi-coding-agent or any pi extension — so `/wiki-run --schedule weekly` printed a command the user couldn't execute. The emitted payload also contained the typo `/wiki:run` (real slash-command is `/wiki-run`), and the tool description claimed it scheduled jobs when it only ever printed instructions. Now emits a real, copy-pasteable **POSIX 5-field crontab line** wrapped in `/bin/bash -lc` (so npm-global / bun / nvm PATH is imported under cron's minimal env), with defensive `mkdir -p` of the log dir and a `# llm-wiki-autoupdate` removal tag. The tool description, output text, `prompts/wiki-run.md`, `docs/api.md` and all 10 i18n READMEs now explicitly say "prints — does not install". `details` now carries `cronLine` and `installed: false`. New `test/wiki-watch.test.ts` (10 tests) locks down all three regressions plus the portability contract (login-shell wrapper, defensive `mkdir`, quoted `$HOME`).
 - **Personal wiki created at doubled path `~/.llm-wiki/.llm-wiki/…`**: `getPersonalWikiRoot()` returned the dot-dir itself (`~/.llm-wiki`) while `getVaultPaths()` then appended another `.llm-wiki/` segment, so the personal vault was written to `~/.llm-wiki/.llm-wiki/wiki/…`. Fixed by aligning `getPersonalWikiRoot()` with the same "root = parent of `.llm-wiki/`" contract used by project vaults. `WIKI_HOME` continues to override the parent.
 
 ### Added

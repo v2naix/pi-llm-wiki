@@ -1197,10 +1197,12 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "wiki_watch",
     label: "Wiki Watch",
-    description: "Schedule automatic wiki updates (discover → ingest → lint) via pi's cron system.",
+    description:
+      "Print a ready-to-paste crontab line for scheduling automatic wiki updates (discover → ingest → lint). Does NOT schedule anything itself — it returns the command for the user to install.",
     promptSnippet: "Schedule auto-updates for the wiki",
     promptGuidelines: [
       "Use wiki_watch when the user wants the wiki to stay current automatically.",
+      "wiki_watch only PRINTS a cron line — surface the output to the user verbatim so they can install it. Do not claim the schedule is active.",
     ],
     parameters: Type.Object({
       interval: Type.String({ description: "daily, weekly, hourly, or stop" }),
@@ -1212,15 +1214,16 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
             {
               type: "text",
               text: [
-                "🛑 To stop wiki auto-updates:",
+                "🛑 To stop wiki auto-updates, remove the cron line you installed earlier:",
                 "",
+                "```bash",
+                "crontab -e   # then delete the line tagged '# llm-wiki-autoupdate'",
                 "```",
-                "schedule_prompt action=list",
-                "```",
-                "Find the wiki job IDs, then:",
                 "",
-                "```",
-                "schedule_prompt action=remove jobId=<id>",
+                "Or list current jobs to confirm:",
+                "",
+                "```bash",
+                "crontab -l | grep llm-wiki-autoupdate",
                 "```",
               ].join("\n"),
             },
@@ -1229,10 +1232,14 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
         };
       }
 
-      const intervals: Record<string, { cron: string; label: string }> = {
-        daily: { cron: "0 0 8 * * *", label: "Daily at 8:00 AM" },
-        weekly: { cron: "0 0 9 * * 1", label: "Weekly on Monday at 9:00 AM" },
-        hourly: { cron: "0 0 * * * *", label: "Every hour" },
+      // 5-field POSIX crontab expressions (min hour dom month dow).
+      const intervals: Record<
+        string,
+        { cron: string; label: string }
+      > = {
+        daily: { cron: "0 8 * * *", label: "Daily at 8:00 AM" },
+        weekly: { cron: "0 9 * * 1", label: "Weekly on Monday at 9:00 AM" },
+        hourly: { cron: "0 * * * *", label: "Every hour" },
       };
 
       const config = intervals[params.interval];
@@ -1249,18 +1256,37 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
         };
       }
 
+      // Robustness for global crontab environments:
+      //   * `/bin/bash -lc` runs a LOGIN shell that sources /etc/profile +
+      //     ~/.profile / ~/.bash_profile, so npm-global / bun / nvm PATH
+      //     additions are imported — cron's default PATH is only
+      //     `/usr/bin:/bin` and would not find `pi`.
+      //   * `mkdir -p` makes the log dir self-healing for users with only
+      //     a project vault (no `~/.llm-wiki/` yet).
+      //   * All `$HOME` references are double-quoted to survive paths with spaces.
+      //   * `# llm-wiki-autoupdate` tags the line so the user can find and
+      //     remove it via `crontab -e` later (see `interval=stop`).
+      const cronLine = `${config.cron} /bin/bash -lc 'mkdir -p "$HOME/.llm-wiki" && pi -p "/wiki-run" >> "$HOME/.llm-wiki/cron.log" 2>&1' # llm-wiki-autoupdate`;
+
       return {
         content: [
           {
             type: "text",
             text: [
-              `⏰ To set up ${config.label} wiki updates, run:`,
+              `⏰ To set up ${config.label} wiki updates, add this line to your crontab.`,
+              `**This tool only prints the line — it does not install it.**`,
               "",
-              "```",
-              `schedule_prompt action=add schedule="${config.cron}" prompt="Run /wiki:run for the LLM Wiki" name="llm-wiki-autoupdate"`,
+              "```bash",
+              "crontab -e",
               "```",
               "",
-              "This will auto-discover, ingest, and lint on schedule.",
+              "Then append:",
+              "",
+              "```cron",
+              cronLine,
+              "```",
+              "",
+              `The line uses \`/bin/bash -lc\` so your shell profile (and the \`pi\` binary on npm-global / bun PATH) is loaded. Output goes to \`~/.llm-wiki/cron.log\`. If your system has no \`/bin/bash\`, replace with \`/bin/sh -c\` and ensure \`pi\` is in cron's PATH yourself.`,
             ].join("\n"),
           },
         ],
@@ -1268,6 +1294,8 @@ export function registerWikiWatch(pi: ExtensionAPI): void {
           interval: params.interval,
           cronSchedule: config.cron,
           label: config.label,
+          cronLine,
+          installed: false,
         } as Record<string, unknown>,
       };
     },

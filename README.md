@@ -78,7 +78,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | 🔍 **Full-text search** | Generated registry with keyword lookup across all pages and sources |
 | 🩺 **Mechanical linting** | Orphans, broken links, duplicate aliases, coverage gaps, stale captures |
 | 📊 **Dashboard** | `wiki_status` — counts, source states, recent activity |
-| 🤖 **Auto-update watch** | `wiki_watch` — schedule periodic discovery + ingest |
+| 🤖 **Auto-update watch** | `wiki_watch` — print a `crontab` line that runs the full cycle on a schedule |
 | 🧠 **Layered recall** | Searches both personal (`~/.llm-wiki/`) and project (`.llm-wiki/`) vaults — personal knowledge follows you everywhere |
 | 📝 **Auto-bootstrap** | Extension suggests creating a wiki when none exists in the current directory |
 | 💾 **Lightweight capture** | `wiki_retro` — save atomic insights as a single markdown file; full 4-layer pipeline also available via `wiki_capture_source` |
@@ -106,7 +106,7 @@ The result is a wiki that **compounds** as you capture sources, ask questions, a
 | `wiki_status` | Show counts, source states, and recent activity |
 | `wiki_rebuild_meta` | Force a full metadata rebuild (registry, backlinks, index, log) |
 | `wiki_log_event` | Append a structured event to the wiki activity log |
-| `wiki_watch` | Schedule automatic wiki updates (daily / weekly / hourly) |
+| `wiki_watch` | Print a `crontab` line for automatic wiki updates (daily / weekly / hourly) — does not install it |
 | `wiki_capture_trajectory` _(opt-in)_ | Capture the completed task's tool-call trajectory (agent working-memory) |
 | `wiki_distill_skills` _(opt-in)_ | Batch undistilled trajectories for synthesis into reusable skill pages |
 | `wiki_recall_skill` _(opt-in)_ | Recall distilled skills + similar past cases — "have I done this before?" |

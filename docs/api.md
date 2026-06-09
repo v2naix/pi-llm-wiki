@@ -314,28 +314,37 @@ details: { kind: string }
 
 ## wiki_watch
 
-Output the shell command needed to schedule automatic wiki updates (discover → ingest → lint) via
-pi's `schedule_prompt` cron system. Does not schedule anything directly — it returns the command
-for the user to run.
+Print a ready-to-paste **POSIX crontab line** that runs the full wiki cycle (discover → ingest →
+lint) on a schedule by invoking `pi -p "/wiki-run"` headlessly under `/bin/bash -lc` so the
+user's shell profile (and the `pi` binary on npm-global / bun / nvm PATH) is imported. **Does
+not schedule anything directly** — it returns the command for the user to install with
+`crontab -e`. Calling agents should surface the output verbatim and avoid claiming the schedule
+is active.
 
 **Parameters**
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `interval` | `string` | ✅ | `"daily"` (8:00 AM), `"weekly"` (Monday 9:00 AM), `"hourly"`, or `"stop"` (prints removal instructions) |
+| `interval` | `string` | ✅ | `"daily"` (8:00 AM), `"weekly"` (Monday 9:00 AM), `"hourly"`, or `"stop"` (prints crontab removal instructions) |
 
 **Returns**
 
 ```
 details: {
   interval: string,
-  cronSchedule: string,   // e.g. "0 0 8 * * *"
-  label: string           // e.g. "Daily at 8:00 AM"
+  cronSchedule: string,   // 5-field POSIX expression, e.g. "0 8 * * *"
+  label: string,          // e.g. "Daily at 8:00 AM"
+  cronLine: string,       // full crontab line, tagged "# llm-wiki-autoupdate"
+  installed: false        // tool never installs — always false
 }
 ```
 
-When `interval` is `"stop"`, returns `details: { action: "stop_instructions" }` with instructions
-for removing existing jobs via `schedule_prompt action=remove`.
+Output is appended to `~/.llm-wiki/cron.log` (the directory is created by the cron line itself
+via `mkdir -p`). On systems without `/bin/bash`, replace the wrapper with `/bin/sh -c` and
+ensure `pi` is in cron's PATH yourself.
+
+When `interval` is `"stop"`, returns `details: { action: "stop_instructions" }` with
+instructions for removing the line via `crontab -e` (look for the `# llm-wiki-autoupdate` tag).
 
 ---
 
