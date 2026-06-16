@@ -21,5 +21,6 @@ export const WIKI_STATUS_BLOCK =
  * present. See test/inject-idempotent.test.ts.
  */
 export function appendWikiStatus(systemPrompt: string): string {
-  return `${systemPrompt}\n\n${WIKI_STATUS_BLOCK}`;
+  const base = systemPrompt.split(`\n\n${WIKI_STATUS_BLOCK}`).join("");
+  return `${base}\n\n${WIKI_STATUS_BLOCK}`;
 }
