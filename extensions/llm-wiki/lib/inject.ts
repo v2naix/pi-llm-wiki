@@ -13,12 +13,13 @@ export const WIKI_STATUS_BLOCK =
   "<wiki_status>LLM Wiki active — use wiki_recall for deeper search, wiki_observe to record observations, wiki_retro to save insights.</wiki_status>";
 
 /**
- * Append the wiki-status footer to a system prompt.
+ * Append the wiki-status footer to a system prompt — idempotently (issue #87).
  *
- * KNOWN BUG (#87): this is NOT idempotent. It re-appends on every call, so when
- * an aborted/retried agent start carries the prior injection forward, the footer
- * stacks (2x, 3x, ...). The fix is to skip appending when the block is already
- * present. See test/inject-idempotent.test.ts.
+ * Strips any already-present footer (with its leading blank line) before
+ * appending exactly one. This makes the injection safe across aborted/retried
+ * agent starts that carry the prior injection forward in the chained system
+ * prompt, so the footer never stacks (2x, 3x, ...).
+ * See test/inject-idempotent.test.ts.
  */
 export function appendWikiStatus(systemPrompt: string): string {
   const base = systemPrompt.split(`\n\n${WIKI_STATUS_BLOCK}`).join("");
