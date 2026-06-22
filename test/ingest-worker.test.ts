@@ -40,8 +40,8 @@ describe("buildIngestedSourcePage", () => {
     expect(page).toContain("# Attention Is All You Need");
     expect(page).toContain("Transformer architecture");
     expect(page).toContain("- Self-attention scales well");
-    expect(page).toContain("[[self-attention]]");
-    expect(page).toContain("[[google-brain]]");
+    expect(page).toContain("[[concepts/self-attention]]");
+    expect(page).toContain("[[entities/google-brain]]");
     expect(page).toContain("> Attention is all you need — Vaswani et al.");
     expect(page).toContain("⚠️ **Contradiction**");
     expect(page).toContain("[https://example.com/paper]");

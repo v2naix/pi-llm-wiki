@@ -116,11 +116,11 @@ export function buildIngestedSourcePage(
       : "- [None recorded]";
   const entities =
     data.entities.length > 0
-      ? data.entities.map((e) => `- [[${slugify(e.title)}]]`).join("\n")
+      ? data.entities.map((e) => `- [[entities/${slugify(e.title)}]]`).join("\n")
       : "- [None]";
   const concepts =
     data.concepts.length > 0
-      ? data.concepts.map((c) => `- [[${slugify(c.title)}]]`).join("\n")
+      ? data.concepts.map((c) => `- [[concepts/${slugify(c.title)}]]`).join("\n")
       : "- [None]";
   const quotes =
     data.quotes && data.quotes.length > 0
