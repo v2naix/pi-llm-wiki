@@ -82,6 +82,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@mariozechner/pi-agent-core": "^0.70.2",
+    "@mariozechner/pi-ai": "^0.70.2",
     "@mariozechner/pi-coding-agent": "^0.70.2",
     "@mermaid-js/mermaid-cli": "^11.12.0",
     "@types/node": "^22",
