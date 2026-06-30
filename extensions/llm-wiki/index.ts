@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { installGuardrails } from "./lib/guardrails.js";
-import { appendWikiStatus } from "./lib/inject.js";
+import { buildAgentStartInjection } from "./lib/inject.js";
 import { registerWikiModelCommand } from "./lib/model-command.js";
 import {
   buildSessionNotice,
@@ -216,7 +216,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     const prompt = event.prompt || "";
-    let injectedContext = event.systemPrompt || "";
+    // Volatile, per-turn content (recall results + one-time topic-inference
+    // directive) MUST NOT go into the system prompt (issue #92). The system
+    // prompt is the provider's primary cache prefix; rewriting it every turn
+    // (recall is keyed on event.prompt, so it differs each turn) invalidates
+    // the whole prompt cache, forcing a full re-prompt-fill every turn. Collect
+    // it here and deliver it as a tail conversation message instead, which
+    // leaves the cached system-prompt prefix stable.
+    let dynamicContext = "";
 
     // Topic inference on first turn after auto-creation
     if (needsTopicInference && prompt.trim()) {
@@ -238,7 +245,7 @@ export default function (pi: ExtensionAPI) {
         // ignore
       }
 
-      injectedContext += `
+      dynamicContext += `
 
 ## Wiki Setup Required
 The LLM Wiki was just auto-created but needs its topic and mode configured. Before responding to the user, analyze their prompt and this project's context to infer:
@@ -279,7 +286,7 @@ Then call wiki_bootstrap with the inferred topic and mode to finalize the setup.
           skillInlineMax: runtime.config?.recallSkillInlineMax,
         });
         if (recallContext) {
-          injectedContext += `\n\n${recallContext}`;
+          dynamicContext += `\n\n${recallContext}`;
         }
         // Recall-aware status line (issue #77): make it visible that recall
         // actually fired and how many pages matched. Purely a UI signal — no
@@ -294,11 +301,19 @@ Then call wiki_bootstrap with the inferred topic and mode to finalize the setup.
       }
     }
 
-    // Always inject a visible wiki status footer, even when empty
-    // This ensures the model knows the wiki is active and can use it
-    injectedContext = appendWikiStatus(injectedContext);
+    // Split into a cache-stable system prompt (static footer only) and a
+    // volatile tail message (issue #92). See lib/inject.ts for the contract.
+    const { systemPrompt, message } = buildAgentStartInjection(event.systemPrompt || "", [
+      dynamicContext,
+    ]);
 
-    if (injectedContext === event.systemPrompt) return;
-    return { systemPrompt: injectedContext };
+    // Only claim a systemPrompt change when the footer actually altered the
+    // string (a carry-forward turn already carries it, so this no-ops).
+    const systemPromptChanged = systemPrompt !== event.systemPrompt;
+    if (!systemPromptChanged && !message) return;
+    return {
+      ...(systemPromptChanged ? { systemPrompt } : {}),
+      ...(message ? { message } : {}),
+    };
   });
 }
