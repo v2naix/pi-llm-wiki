@@ -65,6 +65,7 @@ describe("parseModelRef", () => {
 // ── persistTaskModel (round-trips through loadTaskConfig) ──
 describe("persistTaskModel", () => {
   let tmpDir: string;
+  let priorAgentDir: string | undefined;
   beforeEach(() => {
     tmpDir = join(
       import.meta.dirname,
@@ -73,8 +74,18 @@ describe("persistTaskModel", () => {
       `modelsel-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     mkdirSync(tmpDir, { recursive: true });
+    // Hermetic isolation: loadTaskConfig merges the global agent-dir settings,
+    // so point it at an empty dir to keep a developer's real
+    // ~/.pi/agent/settings.json from leaking a taskModel (issue #92 follow-up).
+    priorAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(tmpDir, "agent-home");
   });
-  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+  afterEach(() => {
+    // biome-ignore lint/performance/noDelete: must truly unset; assigning undefined sets the string "undefined" in Node
+    if (priorAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = priorAgentDir;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
 
   it("writes taskModel to project .pi/settings.json and loadTaskConfig reads it back", () => {
     persistTaskModel(tmpDir, { provider: "anthropic", id: "claude-haiku" });

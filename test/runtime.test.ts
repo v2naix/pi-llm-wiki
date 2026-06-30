@@ -47,6 +47,7 @@ function makeRegistry(opts: {
 // ── task-config ───────────────────────────────────────────
 describe("loadTaskConfig", () => {
   let tmpDir: string;
+  let priorAgentDir: string | undefined;
 
   beforeEach(() => {
     tmpDir = join(
@@ -56,8 +57,19 @@ describe("loadTaskConfig", () => {
       `taskcfg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
+    // Hermetic isolation: loadTaskConfig merges the global agent-dir
+    // settings (getAgentDir()/settings.json). Point it at an empty dir so a
+    // developer's real ~/.pi/agent/settings.json can't leak a taskModel into
+    // these assertions (issue #92 follow-up).
+    priorAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(tmpDir, "agent-home");
   });
-  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+  afterEach(() => {
+    // biome-ignore lint/performance/noDelete: must truly unset; assigning undefined sets the string "undefined" in Node
+    if (priorAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = priorAgentDir;
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
 
   it("returns empty config (no taskModel) when nothing is set", () => {
     const cfg = loadTaskConfig(tmpDir);
