@@ -14,8 +14,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { McpServer } from "@modelcontextprotocol/server";
-import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
+import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
 // ─── Wiki Vault Detection ──────────────────────────────
