@@ -65,7 +65,7 @@
     "prompts": ["./prompts"],
     "image": "https://raw.githubusercontent.com/zosmaai/pi-llm-wiki/main/assets/screenshot.png",
     "mcpservers": {
-      "llm-wiki": "node ./mcp/index.js"
+      "llm-wiki": "node ./mcp/index.ts"
     }
   },
   "peerDependencies": {
@@ -77,8 +77,10 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
-    "node-html-markdown": "^2.0.0"
+    "node-html-markdown": "^2.0.0",
+    "zod": "^4.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
