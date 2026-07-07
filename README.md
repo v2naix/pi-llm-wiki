@@ -16,19 +16,7 @@
 
 <br/>
 
-<div align="center">
-  <a href="https://github.com/zosmaai/pi-llm-wiki/stargazers">
-    <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring pi-llm-wiki!" width="100%" />
-  </a>
-  <br/>
-  <sub>
-    If you find pi-llm-wiki useful,
-    <a href="https://github.com/zosmaai/pi-llm-wiki">⭐ star the repo</a> —
-    it lets us know we're building something that matters.
-  </sub>
-</div>
 
-<br/>
 
 **Self-maintaining, Obsidian-compatible knowledge base for [pi](https://pi.dev).**
 Follows Andrej Karpathy's [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).
@@ -402,9 +390,25 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, test patterns, and
 
 ---
 
+<div align="center">
+  <a href="https://github.com/zosmaai/pi-llm-wiki/stargazers">
+    <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring pi-llm-wiki!" width="100%" />
+  </a>
+  <br/>
+  <sub>
+    If you find pi-llm-wiki useful,
+    <a href="https://github.com/zosmaai/pi-llm-wiki">⭐ star the repo</a> —
+    it lets us know we're building something that matters.
+  </sub>
+</div>
+
+<br/>
+
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=zosmaai/pi-llm-wiki&type=Date)](https://star-history.com/#zosmaai/pi-llm-wiki&Date)
+<img src="./assets/star-history.svg" alt="Star History Chart" width="100%" />
+
+_Chart auto-updates weekly via [GitHub Action](./.github/workflows/star-history.yml)._
 
 ## Contributors
 
