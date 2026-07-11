@@ -354,7 +354,12 @@ export function registerObservationReminder(
     reminderState.observeDoneThisSession = false;
   });
 
-  pi.on("agent_end", async (_event, _ctx) => {
+  pi.on("agent_end", async (event, _ctx) => {
+    // Skip reminder on retries — willRetry means pi will re-run the agent,
+    // and queuing another reminder would duplicate them (issue: connection
+    // errors cause multiple retries, each firing agent_end).
+    if ("willRetry" in event && (event as { willRetry?: boolean }).willRetry) return;
+
     turnsSinceLastReminder++;
     if (turnsSinceLastReminder < REMINDER_INTERVAL) return;
     if (reminderState.observeDoneThisSession) return;

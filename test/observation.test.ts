@@ -1,8 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { rebuildMetadataLight } from "../extensions/llm-wiki/lib/metadata.js";
-import { saveObservation } from "../extensions/llm-wiki/lib/observation.js";
+import {
+  createReminderState,
+  registerObservationReminder,
+  saveObservation,
+} from "../extensions/llm-wiki/lib/observation.js";
 import { searchWiki } from "../extensions/llm-wiki/lib/recall.js";
 import { ensureVaultStructure, getVaultPaths } from "../extensions/llm-wiki/lib/utils.js";
 
@@ -170,5 +175,198 @@ describe("wiki observation", () => {
     expect(result.slug).toContain("complex-edge-case-100-done");
     expect(result.slug).not.toContain("//");
     expect(result.slug).not.toContain("_");
+  });
+});
+
+// ─── registerObservationReminder (retry deduplication) ──────────────────────
+
+/**
+ * Helper to create a mock pi that captures event handlers and sent messages.
+ * Returns the mock pi, a way to emit events, and the collected messages.
+ */
+function createMockPi() {
+  const handlers: Record<
+    string,
+    Array<(event: unknown, ctx: unknown) => void | Promise<void>>
+  > = {};
+  const messages: Array<{
+    msg: { customType: string; content: string; display: boolean };
+    opts: { deliverAs: string };
+  }> = [];
+
+  const pi = {
+    on: (event: string, handler: (event: unknown, ctx: unknown) => void | Promise<void>) => {
+      if (!handlers[event]) handlers[event] = [];
+      handlers[event].push(handler);
+    },
+    sendMessage: (
+      msg: { customType: string; content: string; display: boolean },
+      opts: { deliverAs: string },
+    ) => {
+      messages.push({ msg, opts });
+    },
+  } as unknown as ExtensionAPI;
+
+  const emit = async (event: string, eventData?: unknown) => {
+    for (const h of handlers[event] ?? []) {
+      await h(eventData ?? {}, {});
+    }
+  };
+
+  return { pi, emit, messages, handlers };
+}
+
+describe("registerObservationReminder — retry deduplication", () => {
+  it("sends reminder after N turns (default 5)", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 3 });
+
+    // Simulate 2 agent_end events — no reminder yet (below threshold)
+    await emit("agent_end", {});
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(0);
+
+    // 3rd agent_end — reminder fires
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(1);
+    expect(messages[0].msg.customType).toBe("wiki-observe-reminder");
+    expect(messages[0].opts.deliverAs).toBe("nextTurn");
+  });
+
+  it("skips reminder when willRetry is true (connection retry dedup)", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 1 });
+
+    // Simulate 3 retries — all with willRetry: true
+    await emit("agent_end", { willRetry: true });
+    await emit("agent_end", { willRetry: true });
+    await emit("agent_end", { willRetry: true });
+
+    // No reminder should have been queued
+    expect(messages).toHaveLength(0);
+  });
+
+  it("sends reminder only on final agent_end after retries", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 1 });
+
+    // 2 retries, then final success
+    await emit("agent_end", { willRetry: true });
+    await emit("agent_end", { willRetry: true });
+    await emit("agent_end", { willRetry: false }); // final
+
+    // Only 1 reminder (from the final event)
+    expect(messages).toHaveLength(1);
+    expect(messages[0].msg.customType).toBe("wiki-observe-reminder");
+  });
+
+  it("does not count retries toward the turn interval", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 3 });
+
+    // 5 retries (should be skipped and not count)
+    for (let i = 0; i < 5; i++) {
+      await emit("agent_end", { willRetry: true });
+    }
+
+    // Now 2 normal turns — still below threshold
+    await emit("agent_end", {});
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(0);
+
+    // 3rd normal turn — fires
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(1);
+  });
+
+  it("skips reminder when observeDoneThisSession is true", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 1 });
+
+    // Simulate wiki_observe being called
+    state.observeDoneThisSession = true;
+
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(0);
+  });
+
+  it("resets state on session_start", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 1 });
+
+    // Complete some turns, then session_start resets
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(1);
+
+    state.observeDoneThisSession = true; // pretend observe was called
+    await emit("session_start");
+
+    // State reset — reminder can fire again after threshold
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(2);
+  });
+
+  it("resets state on session_compact", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 1 });
+
+    await emit("agent_end", {});
+    state.observeDoneThisSession = true;
+
+    await emit("session_compact");
+
+    // State reset — reminder fires again
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(2);
+  });
+
+  it("handles willRetry undefined (legacy pi versions)", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, { turnsBetweenReminders: 1 });
+
+    // event without willRetry field at all
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(1);
+  });
+
+  it("respects display option (false = silent injection)", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    registerObservationReminder(pi, state, {
+      turnsBetweenReminders: 1,
+      display: false,
+    });
+
+    await emit("agent_end", {});
+    expect(messages).toHaveLength(1);
+    expect(messages[0].msg.display).toBe(false);
+  });
+
+  it("respects display option as function resolver", async () => {
+    const { pi, emit, messages } = createMockPi();
+    const state = createReminderState();
+    let noticesOn = true;
+    registerObservationReminder(pi, state, {
+      turnsBetweenReminders: 1,
+      display: () => noticesOn,
+    });
+
+    await emit("agent_end", {});
+    expect(messages[0].msg.display).toBe(true);
+
+    noticesOn = false;
+    await emit("agent_end", {}); // next interval cycle would need reset
+    // For this test, we manually reset to trigger again
+    await emit("session_start");
+    await emit("agent_end", {});
+    expect(messages[2].msg.display).toBe(false);
   });
 });
