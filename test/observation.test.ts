@@ -185,17 +185,17 @@ describe("wiki observation", () => {
  * Returns the mock pi, a way to emit events, and the collected messages.
  */
 function createMockPi() {
-  const handlers: Record<string, Array<(event: unknown, ctx: unknown) => void | Promise<void>>> = {};
+  const handlers: Record<
+    string,
+    Array<(event: unknown, ctx: unknown) => void | Promise<void>>
+  > = {};
   const messages: Array<{
     msg: { customType: string; content: string; display: boolean };
     opts: { deliverAs: string };
   }> = [];
 
   const pi = {
-    on: (
-      event: string,
-      handler: (event: unknown, ctx: unknown) => void | Promise<void>,
-    ) => {
+    on: (event: string, handler: (event: unknown, ctx: unknown) => void | Promise<void>) => {
       if (!handlers[event]) handlers[event] = [];
       handlers[event].push(handler);
     },

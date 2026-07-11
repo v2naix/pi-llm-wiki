@@ -1,0 +1,11 @@
+{
+  "panel": ["opencode-go/deepseek-v4-flash", "zai/glm-4.5-air", "razorblade/gemma-4-12b-qat-turbo"],
+  "judge": "opencode-go/mimo-v2.5",
+  "maxPanelModels": 3,
+  "maxPanelOutputTokens": 2048,
+  "maxCompletionTokens": 4096,
+  "temperature": 0.3,
+  "panelTools": "none",
+  "maxToolCalls": 16,
+  "footerDisplay": "full"
+}
