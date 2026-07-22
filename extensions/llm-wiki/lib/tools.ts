@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import { parse } from "yaml";
+import { writeGeneralConcept } from "./concept-producers.js";
 import { launchEmbedPages, reindexEmbeddings, resolveEmbedder } from "./embeddings.js";
 import { scheduleReindex } from "./indexing.js";
 import { runIngestSynthesis } from "./ingest-worker.js";
@@ -13,6 +15,8 @@ import {
   rebuildMetadata,
   rebuildMetadataLight,
 } from "./metadata.js";
+import { initializeKnowledgeBundle, readBundleRevision } from "./okf-mutation.js";
+import type { YamlValue } from "./okf-reader.js";
 import type { Runtime } from "./runtime.js";
 import { captureFile, captureText, captureUrl } from "./source-packet.js";
 import { parseModelRef } from "./task-config.js";
@@ -117,6 +121,11 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
       const paths = getVaultPaths(root);
 
       ensureVaultStructure(paths);
+      await initializeKnowledgeBundle({
+        vaultRoot: paths.root,
+        mutationId: _toolCallId,
+        expectedRevision: 0,
+      });
 
       const config = {
         name: params.topic,
@@ -567,33 +576,71 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
       }
 
       const today = fmtDate();
-      const template = buildPageTemplate(type, params.title, today, params.content);
-      mkdirSync(join(paths.wiki, folder), { recursive: true });
-      writeFileSync(pagePath, template, "utf-8");
-
-      appendEvent(paths, {
-        kind: "ensure_page",
-        page_type: type,
+      const payload = buildNativePagePayload(type, params.title, today, params.content);
+      const result = await writeGeneralConcept({
+        vaultRoot: paths.root,
+        mutationId: _toolCallId,
+        expectedRevision: await readBundleRevision(paths.root),
+        path: `${folder}/${slug}.md`,
+        type,
         title: params.title,
-        path: `${folder}/${slug}`,
+        description: payload.description,
+        body: payload.body,
+        metadata: payload.metadata,
       });
 
-      // Register the new page so retrieval + embeddings can see it. When a
-      // background runtime is available, the rebuild + embeddings run off the
-      // tool's critical path; otherwise fall back to a synchronous rebuild.
-      if (runtime) {
-        scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
-      } else {
-        rebuildMetadataLight(paths);
-      }
+      if (runtime) scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
 
       return {
         content: [{ type: "text", text: `✅ Created ${type} page: \`${pagePath}\`` }],
-        details: { path: pagePath, created: true } as Record<string, unknown>,
+        details: { path: pagePath, created: true, revision: result.revision } as Record<
+          string,
+          unknown
+        >,
       };
     },
   });
 }
+
+function buildNativePagePayload(
+  type: GeneralPageType,
+  title: string,
+  date: string,
+  customContent?: string,
+): { description: string; body: string; metadata: Record<string, YamlValue> } {
+  const template = buildPageTemplate(type, title, date, customContent);
+  const match = template.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const parsed = match ? (parse(match[1]) as Record<string, unknown>) : {};
+  const body = (match ? match[2] : template).trimStart();
+  const metadata: Record<string, YamlValue> = {};
+  for (const [key, value] of Object.entries(parsed ?? {})) {
+    if (new Set(["type", "title", "description", "timestamp", "created", "updated"]).has(key)) {
+      continue;
+    }
+    metadata[key] = value as YamlValue;
+  }
+  const prose = body
+    .replace(/^#.*$/gm, "")
+    .replace(/\[([^\]]+)\]\([^\)]+\)|\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1$2")
+    .replace(/\[[^\]]*\]|[*_`>#-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const description = customContent
+    ? (prose.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || prose).slice(0, 240)
+    : `A newly created ${type} page titled “${title}”; detailed knowledge has not yet been added.`;
+  if (!description)
+    throw new Error("Page content must provide enough knowledge for a description.");
+  return { description, body, metadata };
+}
+
+type GeneralPageType =
+  | "entity"
+  | "concept"
+  | "synthesis"
+  | "analysis"
+  | "requirement"
+  | "skill"
+  | "case";
 
 function buildPageTemplate(
   type: string,
@@ -660,11 +707,9 @@ function buildPageTemplate(
       "",
       "- [Known failure mode or caveat]",
       "",
-      "## Distilled From",
+      "## Provenance",
       "",
-      "_Trajectories this skill was generalized from._",
-      "",
-      "- [[trajectories/TRJ-...]]",
+      "_Add disclosure-safe provenance when this draft is distilled from private trajectory evidence._",
       "",
     ].join("\n");
   }
@@ -696,9 +741,9 @@ function buildPageTemplate(
       "",
       "[Result, and anything worth reusing or avoiding next time]",
       "",
-      "## Trajectory",
+      "## Provenance",
       "",
-      "- [[trajectories/TRJ-...]] — captured tool-call run",
+      "_Add disclosure-safe provenance for any private trajectory evidence used to write this case._",
       "",
     ].join("\n");
   }
@@ -845,7 +890,7 @@ export function registerWikiLint(pi: ExtensionAPI, runtime?: Runtime): void {
  * Run the wiki health scan (issue #77 extracted it from the tool body so it can
  * run off-thread via `dispatchReported`). Returns the human-readable summary.
  */
-function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
+async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string> {
   const pages = findWikiPages(paths.wiki);
   const registry = buildRegistry(paths);
   buildBacklinks(paths, registry); // ensures backlinks.json is current
@@ -899,20 +944,20 @@ function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
         const folder = gap.topic.includes("/") ? gap.topic.split("/")[0] : "concepts";
         const name = gap.topic.includes("/") ? gap.topic.split("/").pop()! : gap.topic;
         const pagePath = join(paths.wiki, folder, `${name}.md`);
-        mkdirSync(join(paths.wiki, folder), { recursive: true });
-        try {
-          // Atomic create-if-absent: the `wx` flag fails with EEXIST instead of
-          // overwriting, avoiding the existsSync→write TOCTOU race (CodeQL).
-          writeFileSync(
-            pagePath,
-            `---\ntype: concept\ncreated: ${fmtDate()}\nupdated: ${fmtDate()}\nsources: []\nstatus: stub\n---\n\n# ${name.replace(/-/g, " ")}\n\n_Stub auto-created by lint. Expand with content from: ${gap.mentionedBy.map((r) => `[[${r}]]`).join(", ")}_\n`,
-            { encoding: "utf-8", flag: "wx" },
-          );
-          fixesApplied++;
-        } catch (err) {
-          // Page already exists — nothing to fix. Re-throw anything else.
-          if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-        }
+        if (existsSync(pagePath)) continue;
+        const title = name.replace(/-/g, " ");
+        await writeGeneralConcept({
+          vaultRoot: paths.root,
+          mutationId: `lint-stub-${folder}-${name}-${fmtDate()}`,
+          expectedRevision: await readBundleRevision(paths.root),
+          path: `${folder}/${name}.md`,
+          type: "concept",
+          title,
+          description: `A knowledge gap mentioned by ${gap.mentionedBy.length} existing Concepts; substantive detail is not yet recorded.`,
+          body: `## Knowledge gap\n\nThis topic was mentioned by ${gap.mentionedBy.map((id) => `[[${id}]]`).join(", ")} but still needs substantive knowledge.\n`,
+          metadata: { status: "stub", mentioned_by: gap.mentionedBy },
+        });
+        fixesApplied++;
       }
     }
   }
@@ -941,16 +986,6 @@ function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
   const reportPath = join(paths.outputs, `lint-${fmtDate()}.md`);
   mkdirSync(paths.outputs, { recursive: true });
   writeFileSync(reportPath, `${reportLines.join("\n")}\n`, "utf-8");
-
-  appendEvent(paths, {
-    kind: "lint",
-    orphans,
-    missing_pages: missingPages,
-    contradictions,
-    auto_fix: autoFix,
-  });
-
-  rebuildMetadataLight(paths);
 
   return [
     "🧹 **LLM Wiki lint complete**",

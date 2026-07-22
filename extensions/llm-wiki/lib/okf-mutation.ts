@@ -720,6 +720,11 @@ export async function readControlledKnowledgeBundle(
   });
 }
 
+/** Read the canonical revision used as the optimistic-concurrency precondition. */
+export async function readBundleRevision(vaultRoot: string): Promise<number> {
+  return withMutationLock(vaultRoot, async (paths) => (await requireState(paths)).revision);
+}
+
 async function withMutationLock<T>(
   vaultRoot: string,
   work: (paths: Paths) => Promise<T>,

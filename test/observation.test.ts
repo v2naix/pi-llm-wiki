@@ -59,9 +59,9 @@ describe("wiki observation", () => {
     } catch {}
   });
 
-  it("should save an observation and create a page file", () => {
+  it("should save an observation and create a page file", async () => {
     const paths = getVaultPaths(vaultDir);
-    const result = saveObservation(paths, {
+    const result = await saveObservation(paths, {
       title: "JWT auth middleware added",
       content:
         "User decided to use JWT with refresh tokens. Implementation at src/auth/jwt.ts. Tests passing.",
@@ -75,16 +75,17 @@ describe("wiki observation", () => {
     expect(existsSync(result.pagePath)).toBe(true);
 
     const content = readFileSync(result.pagePath, "utf-8");
+    expect(content).toContain("type: observation");
     expect(content).toContain("Observation: JWT auth middleware added");
     expect(content).toContain("User decided to use JWT with refresh tokens");
     expect(content).toContain("relevance: high");
-    expect(content).toContain('tags: ["auth", "jwt", "backend"]');
-    expect(content).toContain('source_context: "Adding authentication module"');
+    expect(content).toContain("tags:\n  - auth\n  - jwt\n  - backend");
+    expect(content).toContain("source_context: Adding authentication module");
   });
 
-  it("should save an observation with default optional fields", () => {
+  it("should save an observation with default optional fields", async () => {
     const paths = getVaultPaths(vaultDir);
-    const result = saveObservation(paths, {
+    const result = await saveObservation(paths, {
       title: "Quick fix applied",
       content: "Fixed the login timeout bug by increasing TTL.",
       relevance: "medium",
@@ -97,9 +98,9 @@ describe("wiki observation", () => {
     expect(content).not.toContain("source_context:");
   });
 
-  it("should save an observation with critical relevance", () => {
+  it("should save an observation with critical relevance", async () => {
     const paths = getVaultPaths(vaultDir);
-    const result = saveObservation(paths, {
+    const result = await saveObservation(paths, {
       title: "User is colorblind",
       content: "User stated they are colorblind; red/green indicators do not work for them.",
       relevance: "critical",
@@ -109,9 +110,9 @@ describe("wiki observation", () => {
     expect(content).toContain("relevance: critical");
   });
 
-  it("should make observations searchable via wiki_recall", () => {
+  it("should make observations searchable via wiki_recall", async () => {
     const paths = getVaultPaths(vaultDir);
-    saveObservation(paths, {
+    await saveObservation(paths, {
       title: "Postgres migration constraint",
       content:
         "Migration from MySQL to Postgres: discovered that JSONB queries use different syntax.",
@@ -125,9 +126,9 @@ describe("wiki observation", () => {
     expect(results.some((r) => r.title.includes("Postgres migration"))).toBe(true);
   });
 
-  it("should search observation content in wiki_recall", () => {
+  it("should search observation content in wiki_recall", async () => {
     const paths = getVaultPaths(vaultDir);
-    saveObservation(paths, {
+    await saveObservation(paths, {
       title: "Auth decision",
       content: "Team chose Lucia for session-based auth over NextAuth and Clerk.",
       relevance: "high",
@@ -141,14 +142,14 @@ describe("wiki observation", () => {
     expect(results.some((r) => r.title.includes("Auth decision"))).toBe(true);
   });
 
-  it("should handle multiple observations independently", () => {
+  it("should handle multiple observations independently", async () => {
     const paths = getVaultPaths(vaultDir);
-    const obs1 = saveObservation(paths, {
+    const obs1 = await saveObservation(paths, {
       title: "First finding",
       content: "Found bug in login flow.",
       relevance: "high",
     });
-    const obs2 = saveObservation(paths, {
+    const obs2 = await saveObservation(paths, {
       title: "Second finding",
       content: "Fixed the bug by adding validation.",
       relevance: "medium",
@@ -164,9 +165,9 @@ describe("wiki observation", () => {
     expect(content2).toContain("Second finding");
   });
 
-  it("should slugify titles correctly", () => {
+  it("should slugify titles correctly", async () => {
     const paths = getVaultPaths(vaultDir);
-    const result = saveObservation(paths, {
+    const result = await saveObservation(paths, {
       title: "Complex/Edge Case: 100% Done!",
       content: "Edge case handling completed.",
       relevance: "low",
