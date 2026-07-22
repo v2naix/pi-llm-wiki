@@ -95,7 +95,7 @@ describe("agent trajectory memory", () => {
     expect(existsSync(join(paths.wiki, "cases"))).toBe(false);
   });
 
-  it("registers the trajectory in metadata as type 'trajectory'", () => {
+  it("keeps private trajectory packets out of the Concept registry", () => {
     const paths = getVaultPaths(wikiDir);
     const result = captureTrajectory(paths, {
       title: "Refactor parser",
@@ -105,9 +105,8 @@ describe("agent trajectory memory", () => {
       join(paths.meta, "registry.json"),
       { pages: {} },
     );
-    const trajId = `trajectories/${result.trajectoryId}`;
-    expect(registry.pages[trajId]).toBeTruthy();
-    expect(registry.pages[trajId].type).toBe("trajectory");
+    const trajectoryId = `trajectories/${result.trajectoryId}`;
+    expect(registry.pages[trajectoryId]).toBeUndefined();
   });
 
   it("assigns sequential TRJ ids on the same day", () => {

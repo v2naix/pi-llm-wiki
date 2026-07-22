@@ -4,7 +4,8 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
 import type { Static } from "typebox";
-import { appendEvent, rebuildMetadataLight } from "./metadata.js";
+import { appendEvent } from "./metadata.js";
+import { rebuildPrivateProjections } from "./private-projections.js";
 import { runSubAgent } from "./subagent.js";
 import { type VaultPaths, fmtDate, slugify } from "./utils.js";
 
@@ -276,6 +277,6 @@ export async function runIngestSynthesis(
     signal,
   });
 
-  if (committed) rebuildMetadataLight(paths);
+  if (committed) await rebuildPrivateProjections(paths);
   return committed;
 }

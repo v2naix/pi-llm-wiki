@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { appendEvent, rebuildMetadataLight } from "./metadata.js";
+import { appendEvent } from "./metadata.js";
 import { searchWikiLayered } from "./recall.js";
 import {
   type VaultPaths,
@@ -275,8 +275,6 @@ export function captureTrajectory(
     step_count: steps.length,
     tool_call_count: toolCallCount,
   });
-
-  rebuildMetadataLight(paths);
 
   return {
     trajectoryId,

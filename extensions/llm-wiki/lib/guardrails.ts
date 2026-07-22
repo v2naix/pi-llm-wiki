@@ -1,7 +1,7 @@
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { scheduleReindex } from "./indexing.js";
-import { rebuildMetadataLight } from "./metadata.js";
+import { rebuildPrivateProjections } from "./private-projections.js";
 import type { Runtime } from "./runtime.js";
 import { isProtectedPath, resolveVaultPaths } from "./utils.js";
 
@@ -60,7 +60,7 @@ export function installGuardrails(pi: ExtensionAPI, runtime?: Runtime): void {
           const launchCtx = ctx ? { hasUI: ctx.hasUI, ui: ctx.ui } : { hasUI: false as const };
           scheduleReindex(runtime, launchCtx, paths);
         } else {
-          rebuildMetadataLight(paths);
+          await rebuildPrivateProjections(paths);
         }
       } catch {
         // Silently fail — metadata rebuild is best-effort

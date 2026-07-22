@@ -23,8 +23,8 @@
  * embeddings step is a no-op unless an embedder is configured (#66/#67).
  */
 
-import { reindexEmbeddings, resolveEmbedder } from "./embeddings.js";
-import { rebuildMetadataLight } from "./metadata.js";
+import { resolveEmbedder } from "./embeddings.js";
+import { rebuildPrivateProjections } from "./private-projections.js";
 import type { LaunchCtx, Runtime } from "./runtime.js";
 import type { VaultPaths } from "./utils.js";
 
@@ -64,13 +64,9 @@ export function scheduleReindex(
       // that land during embedding are not lost.
       while (dirty.has(root)) {
         dirty.delete(root);
-        rebuildMetadataLight(paths);
-
-        // Refresh embeddings only after metadata is consistent. Stale-aware and
-        // a no-op unless an embedder is configured.
         runtime.ensureConfig(root);
         const embedder = resolveEmbedder(runtime.config);
-        if (embedder) await reindexEmbeddings(paths, embedder);
+        await rebuildPrivateProjections(paths, { embedder });
       }
     } finally {
       inflight.delete(root);

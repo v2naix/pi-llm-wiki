@@ -4,19 +4,17 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { parse } from "yaml";
 import { writeGeneralConcept } from "./concept-producers.js";
-import { launchEmbedPages, reindexEmbeddings, resolveEmbedder } from "./embeddings.js";
+import { resolveEmbedder } from "./embeddings.js";
 import { scheduleReindex } from "./indexing.js";
 import { runIngestSynthesis } from "./ingest-worker.js";
-import {
-  type Registry,
-  appendEvent,
-  buildBacklinks,
-  buildRegistry,
-  rebuildMetadata,
-  rebuildMetadataLight,
-} from "./metadata.js";
+import { type Registry, appendEvent } from "./metadata.js";
 import { initializeKnowledgeBundle, readBundleRevision } from "./okf-mutation.js";
-import type { YamlValue } from "./okf-reader.js";
+import { type YamlValue, readKnowledgeBundle } from "./okf-reader.js";
+import {
+  privateProjectionFreshSync,
+  readPrivateProjectionSync,
+  rebuildPrivateProjections,
+} from "./private-projections.js";
 import type { Runtime } from "./runtime.js";
 import { captureFile, captureText, captureUrl } from "./source-packet.js";
 import { parseModelRef } from "./task-config.js";
@@ -24,8 +22,6 @@ import {
   type VaultPaths,
   detectVaultFormat,
   ensureVaultStructure,
-  extractWikilinks,
-  findWikiPages,
   fmtDate,
   getVaultPaths,
   readJson,
@@ -39,6 +35,20 @@ import {
 
 function getPaths(cwd?: string): VaultPaths {
   return resolveVaultPaths(cwd ?? process.cwd());
+}
+
+function currentRegistry(paths: VaultPaths): Registry {
+  const projection = readPrivateProjectionSync(paths);
+  if (projection) {
+    return privateProjectionFreshSync(paths)
+      ? projection.registry
+      : { version: "2.0", last_updated: "", pages: {} };
+  }
+  return readJson<Registry>(join(paths.meta, "registry.json"), {
+    version: "1.0",
+    last_updated: "",
+    pages: {},
+  });
 }
 
 function requireVault(paths: VaultPaths): { ok: true } | { ok: false; reason: string } {
@@ -175,7 +185,7 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
       ].join("\n");
       writeFileSync(join(paths.dotWiki, "WIKI_SCHEMA.md"), schema, "utf-8");
 
-      rebuildMetadata(paths);
+      await rebuildPrivateProjections(paths);
       appendEvent(paths, { kind: "bootstrap", topic: params.topic, mode });
 
       return {
@@ -257,7 +267,7 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
       if (runtime) {
         scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
       } else {
-        rebuildMetadataLight(paths);
+        await rebuildPrivateProjections(paths);
       }
 
       return {
@@ -350,11 +360,7 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
         .filter((d) => d.startsWith("SRC-"))
         .sort();
 
-      const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-        version: "1.0",
-        last_updated: "",
-        pages: {},
-      });
+      const registry = currentRegistry(paths);
       const ingested = new Set<string>();
       for (const [id, entry] of Object.entries(registry.pages)) {
         if (entry.type === "source" && (entry as Record<string, unknown>).status !== "skeleton") {
@@ -428,16 +434,9 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
                 extracted: s.extracted,
               });
               if (committed) {
-                // Background semantic embeddings (#66): embed the pages this
-                // ingest just wrote, off-thread. No-op when unconfigured.
-                const pageIds = [
-                  `sources/${committed.sourceId}`,
-                  ...committed.entitiesCreated.map((e) => `entities/${e}`),
-                  ...committed.entitiesLinked.map((e) => `entities/${e}`),
-                  ...committed.conceptsCreated.map((c) => `concepts/${c}`),
-                  ...committed.conceptsLinked.map((c) => `concepts/${c}`),
-                ];
-                launchEmbedPages(runtime, launchCtx, paths, pageIds, `embed:ingest:${s.id}`);
+                // Publish embeddings with the same complete projection generation.
+                const embedder = resolveEmbedder(runtime.config);
+                if (embedder) await rebuildPrivateProjections(paths, { embedder });
               }
               const summary = committed
                 ? `LLM Wiki: ingested ${s.id} → ${committed.entitiesCreated.length} entit${committed.entitiesCreated.length === 1 ? "y" : "ies"}, ${committed.conceptsCreated.length} concept${committed.conceptsCreated.length === 1 ? "" : "s"}`
@@ -802,11 +801,7 @@ export function registerWikiSearch(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const paths = getPaths(ctx.cwd);
-      const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-        version: "1.0",
-        last_updated: "",
-        pages: {},
-      });
+      const registry = currentRegistry(paths);
       const q = params.query.toLowerCase();
 
       const matches = Object.entries(registry.pages)
@@ -891,49 +886,42 @@ export function registerWikiLint(pi: ExtensionAPI, runtime?: Runtime): void {
  * run off-thread via `dispatchReported`). Returns the human-readable summary.
  */
 async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string> {
-  const pages = findWikiPages(paths.wiki);
-  const registry = buildRegistry(paths);
-  buildBacklinks(paths, registry); // ensures backlinks.json is current
+  // Lint the same parsed Concept boundary used by registry, backlinks, and recall.
+  // Reserved Documents, assets, private packets, code, and external links never enter this set.
+  const bundle = await readKnowledgeBundle(paths.wiki);
+  const concepts = bundle.concepts.filter(({ metadata }) => metadata !== null);
 
   const findings: string[] = [];
   let orphans = 0;
   let missingPages = 0;
   let contradictions = 0;
   const gaps: Array<{ topic: string; mentionedBy: string[] }> = [];
+  const inbound = new Map(concepts.map(({ id }) => [id, 0]));
+  for (const relationship of bundle.relationships) {
+    if (inbound.has(relationship.target)) {
+      inbound.set(relationship.target, (inbound.get(relationship.target) ?? 0) + 1);
+    }
+  }
 
-  const allPageIds = new Set(pages.map((p) => p.relative));
-  const linkCounts: Record<string, number> = {};
-
-  for (const page of pages) {
-    const links = extractWikilinks(page.content);
-    for (const link of links) {
-      if (!allPageIds.has(link)) {
-        missingPages++;
-        findings.push(`Missing page: [[${link}]] (in [[${page.relative}]])`);
-        const existing = gaps.find((g) => g.topic === link);
-        if (existing) {
-          if (!existing.mentionedBy.includes(page.relative))
-            existing.mentionedBy.push(page.relative);
-        } else {
-          gaps.push({ topic: link, mentionedBy: [page.relative] });
-        }
+  for (const concept of concepts) {
+    for (const link of concept.links.filter(({ classification }) => classification === "broken")) {
+      const topic = link.normalizedTarget ?? link.originalDestination;
+      missingPages++;
+      findings.push(`Missing Concept link: ${link.originalDestination} (in ${concept.path})`);
+      const existing = gaps.find((gap) => gap.topic === topic);
+      if (existing) {
+        if (!existing.mentionedBy.includes(concept.id)) existing.mentionedBy.push(concept.id);
       } else {
-        linkCounts[link] = (linkCounts[link] || 0) + 1;
+        gaps.push({ topic, mentionedBy: [concept.id] });
       }
     }
-  }
-
-  for (const page of pages) {
-    if (!linkCounts[page.relative] || linkCounts[page.relative] === 0) {
+    if ((inbound.get(concept.id) ?? 0) === 0) {
       orphans++;
-      findings.push(`Orphan: [[${page.relative}]] has no inbound links`);
+      findings.push(`Orphan: ${concept.path} has no inbound Concept Relationship`);
     }
-  }
-
-  for (const page of pages) {
-    if (page.content.includes("⚠️ **Contradiction")) {
+    if (concept.body.includes("⚠️ **Contradiction")) {
       contradictions++;
-      findings.push(`Contradiction flagged in [[${page.relative}]]`);
+      findings.push(`Contradiction flagged in ${concept.path}`);
     }
   }
 
@@ -972,7 +960,7 @@ async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string>
     `Generated: ${fmtDate()}`,
     "",
     "## Summary",
-    `- Total pages: ${pages.length}`,
+    `- Total pages: ${concepts.length}`,
     `- Orphans: ${orphans}`,
     `- Missing pages: ${missingPages}`,
     `- Contradictions: ${contradictions}`,
@@ -990,7 +978,7 @@ async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string>
   return [
     "🧹 **LLM Wiki lint complete**",
     "",
-    `- Pages: ${pages.length}`,
+    `- Pages: ${concepts.length}`,
     `- Orphans: ${orphans}`,
     `- Missing: ${missingPages}`,
     `- Contradictions: ${contradictions}`,
@@ -1024,12 +1012,11 @@ export function registerWikiStatus(pi: ExtensionAPI): void {
         };
       }
 
-      const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-        version: "1.0",
-        last_updated: "",
-        pages: {},
-      });
-      const backlinks = readJson<Record<string, string[]>>(join(paths.meta, "backlinks.json"), {});
+      const projection = readPrivateProjectionSync(paths);
+      const freshProjection =
+        projection && privateProjectionFreshSync(paths) ? projection : undefined;
+      const registry = currentRegistry(paths);
+      const backlinks = freshProjection?.backlinks ?? {};
       const config = readJson<Record<string, unknown>>(join(paths.dotWiki, "config.json"), {});
 
       const byType: Record<string, number> = {};
@@ -1108,14 +1095,9 @@ export function registerWikiRebuildMeta(pi: ExtensionAPI, runtime?: Runtime): vo
         started:
           "\u{1F9E0} LLM Wiki: metadata rebuild started in the background — the result will be reported when it completes.",
         work: async () => {
-          rebuildMetadata(paths);
-          appendEvent(paths, { kind: "rebuild_meta" });
-          const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-            version: "1.0",
-            last_updated: "",
-            pages: {},
-          });
-          return `✅ LLM Wiki: metadata rebuilt — ${Object.keys(registry.pages).length} pages indexed.`;
+          const result = await rebuildPrivateProjections(paths);
+          const registry = readPrivateProjectionSync(paths)?.registry;
+          return `✅ LLM Wiki: metadata rebuilt — ${Object.keys(registry?.pages ?? {}).length} pages indexed (private-only).`;
         },
       });
     },
@@ -1174,15 +1156,11 @@ export function registerWikiReindexEmbeddings(pi: ExtensionAPI, runtime?: Runtim
         started: `\u{1F9E0} LLM Wiki: embedding reindex started in the background (${embedder.model}) — stats will be reported when it completes.`,
         details: { enabled: true, model: embedder.model },
         work: async () => {
-          const stats = await reindexEmbeddings(paths, embedder, { force: params.force === true });
-          appendEvent(paths, {
-            kind: "reindex_embeddings",
-            embedded: stats.embedded,
-            skipped: stats.skipped,
-            pruned: stats.pruned,
-            model: embedder.model,
+          const result = await rebuildPrivateProjections(paths, {
+            embedder,
+            force: params.force === true,
           });
-          return `✅ LLM Wiki: embeddings reindexed (${embedder.model}) — ${stats.embedded} embedded, ${stats.skipped} fresh, ${stats.pruned} pruned.`;
+          return `✅ LLM Wiki: embeddings reindexed (${embedder.model}) — ${result.status} (${result.effect}).`;
         },
       });
     },
