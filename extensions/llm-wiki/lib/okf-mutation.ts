@@ -86,6 +86,42 @@ export interface BundleMutationResult {
   changedPaths: string[];
 }
 
+export interface ExternalBundleChange {
+  kind: "concept" | "asset" | "reserved";
+  operation: "added" | "modified" | "deleted" | "moved";
+  path: string;
+  fromPath?: string;
+}
+
+export interface ExternalReconciliationDiagnostic {
+  code: string;
+  message: string;
+  path?: string;
+}
+
+export interface ExternalReconciliationInspection {
+  status: "no-op" | "ready" | "reaffirmation-required" | "conflict";
+  revision: number;
+  changes: ExternalBundleChange[];
+  diagnostics: ExternalReconciliationDiagnostic[];
+}
+
+export interface ReconcileExternalBundleRequest {
+  vaultRoot: string;
+  mutationId: string;
+  expectedRevision: number;
+  committedAt?: string;
+  reaffirmConcepts?: string[];
+  moveResolutions?: { fromPath: string; toPath: string }[];
+}
+
+export interface ExternalReconciliationResult {
+  status: "committed" | "no-op";
+  revision: number;
+  mutationId: string;
+  changedPaths: string[];
+}
+
 export class BundleMutationError extends Error {
   constructor(
     public readonly code: string,
@@ -107,6 +143,15 @@ interface HistoryEntry {
   text: string;
 }
 
+interface BaselineEntry {
+  kind: "concept" | "asset" | "reserved";
+  hash: string;
+  conceptTimestamp?: string;
+  conceptSemanticHash?: string;
+  rawSourceId?: string;
+  brokenLinks?: string[];
+}
+
 interface MutationState {
   format: 1;
   vaultIdentity: string;
@@ -115,6 +160,8 @@ interface MutationState {
   history: HistoryEntry[];
   reservedHashes: Record<string, string>;
   trustedReservedHashes: string[];
+  baselineRevision?: number;
+  baseline?: Record<string, BaselineEntry>;
 }
 
 interface Paths {
@@ -219,6 +266,7 @@ export async function writeConcept(request: WriteConceptRequest): Promise<Bundle
     validateMutationIdentity(state, request.mutationId);
     requireRevision(state.revision, request.expectedRevision);
     const reservedDrift = await validateReservedPreconditions(paths, state);
+    await validateObservedCanonicalBaseline(paths, state);
     const baselineHash = await bundleContentHash(paths.wiki);
 
     const current = await readKnowledgeBundle(paths.wiki);
@@ -356,6 +404,7 @@ export async function mutateKnowledgeBundle(
     validateMutationIdentity(state, request.mutationId);
     requireRevision(state.revision, request.expectedRevision);
     const reservedDrift = await validateReservedPreconditions(paths, state);
+    await validateObservedCanonicalBaseline(paths, state);
     const baselineHash = await bundleContentHash(paths.wiki);
     const current = await requireValidBundlePrecondition(paths.wiki);
     const concepts = new Map<string, MutableConcept>();
@@ -568,6 +617,7 @@ export async function moveConcept(request: MoveConceptRequest): Promise<BundleMu
     validateMutationIdentity(state, request.mutationId);
     requireRevision(state.revision, request.expectedRevision);
     await validateReservedPreconditions(paths, state);
+    await validateObservedCanonicalBaseline(paths, state);
     const baselineHash = await bundleContentHash(paths.wiki);
     const current = await requireValidBundlePrecondition(paths.wiki);
     const source = current.concepts.find(({ path }) => path === request.fromPath);
@@ -634,6 +684,7 @@ export async function deleteConcept(request: DeleteConceptRequest): Promise<Bund
     validateMutationIdentity(state, request.mutationId);
     requireRevision(state.revision, request.expectedRevision);
     await validateReservedPreconditions(paths, state);
+    await validateObservedCanonicalBaseline(paths, state);
     const baselineHash = await bundleContentHash(paths.wiki);
     const current = await requireValidBundlePrecondition(paths.wiki);
     const concept = current.concepts.find(({ path }) => path === request.path);
@@ -675,6 +726,7 @@ export async function writeBundleAsset(
     validateMutationIdentity(state, request.mutationId);
     requireRevision(state.revision, request.expectedRevision);
     const reservedDrift = await validateReservedPreconditions(paths, state);
+    await validateObservedCanonicalBaseline(paths, state);
     const baselineHash = await bundleContentHash(paths.wiki);
     await requireValidBundlePrecondition(paths.wiki);
     const existing = await readOptional(resolve(paths.wiki, request.path));
@@ -708,6 +760,102 @@ export async function writeBundleAsset(
     }
     await materializeReservedDocuments(stage, nextState);
     return commitPreparedMutation(paths, stage, baselineHash, nextState, request, intentHash);
+  });
+}
+
+export async function inspectExternalBundle(
+  vaultRoot: string,
+): Promise<ExternalReconciliationInspection> {
+  return withMutationLock(vaultRoot, async (paths) => {
+    const state = await requireState(paths);
+    return analyzeExternalBundle(paths, state);
+  });
+}
+
+export async function reconcileExternalBundle(
+  request: ReconcileExternalBundleRequest,
+): Promise<ExternalReconciliationResult> {
+  return withMutationLock(request.vaultRoot, async (paths) => {
+    const committedAt = validateCommitTime(request.committedAt);
+    const intentHash = hashRequestIntent("external-reconciliation", request);
+    const state = await requireState(paths);
+    const retry = retryResult(state, request.mutationId, intentHash);
+    if (retry) return retry;
+    validateMutationIdentity(state, request.mutationId);
+    requireRevision(state.revision, request.expectedRevision);
+    const observedHash = await bundleContentHash(paths.wiki);
+    const analysis = await analyzeExternalBundle(paths, state, request);
+    if ((await bundleContentHash(paths.wiki)) !== observedHash) {
+      throw new BundleMutationError(
+        "external-bundle-conflict",
+        "Observed Bundle bytes changed while reconciliation was being evaluated.",
+      );
+    }
+    if (analysis.status === "no-op") {
+      const result: ExternalReconciliationResult = {
+        status: "no-op",
+        revision: state.revision,
+        mutationId: request.mutationId,
+        changedPaths: [],
+      };
+      state.mutations[request.mutationId] = { intentHash, result };
+      await atomicWriteJson(paths.state, state);
+      return result;
+    }
+    const unresolved = analysis.diagnostics[0];
+    if (analysis.status === "conflict" || analysis.status === "reaffirmation-required") {
+      throw new BundleMutationError(
+        unresolved?.code ?? "external-reconciliation-conflict",
+        unresolved?.message ?? "External Bundle changes require explicit resolution.",
+        unresolved?.path,
+      );
+    }
+
+    const stage = await copyToStage(paths, `external-reconciliation-${state.revision + 1}`);
+    const observed = await readKnowledgeBundle(stage, {
+      nativeContractApplicable: false,
+      referenceOperations: [],
+    });
+    const reaffirmed = new Set(request.reaffirmConcepts ?? []);
+    for (const concept of observed.concepts) {
+      if (!reaffirmed.has(concept.path) || !concept.metadata) continue;
+      await writeFile(
+        resolve(stage, concept.path),
+        serializeConcept({ ...concept.metadata, timestamp: committedAt }, concept.body),
+        "utf8",
+      );
+    }
+    const nextState = nextCommittedState(
+      state,
+      committedAt,
+      "**Reconciled** externally observed Bundle changes.",
+    );
+    await materializeReservedDocuments(stage, nextState);
+    const validation = await readKnowledgeBundle(stage);
+    if (validation.nativeContract.status !== "pass") {
+      const diagnostic = validation.nativeContract.diagnostics.find(
+        ({ severity }) => severity === "error",
+      );
+      await rm(stage, { recursive: true, force: true });
+      throw new BundleMutationError(
+        "invalid-reconciliation-postcondition",
+        diagnostic?.message ?? "Reconciled Bundle does not satisfy all postconditions.",
+        diagnostic?.path,
+      );
+    }
+    const stageChanges = await changedFilePaths(paths.wiki, stage);
+    const changedPaths = [
+      ...new Set([...analysis.changes.map(({ path }) => path), ...stageChanges]),
+    ].sort();
+    const result: ExternalReconciliationResult = {
+      status: "committed",
+      revision: nextState.revision,
+      mutationId: request.mutationId,
+      changedPaths,
+    };
+    nextState.mutations[request.mutationId] = { intentHash, result };
+    await installPreparedStage(paths, stage, observedHash, nextState, result);
+    return result;
   });
 }
 
@@ -1047,6 +1195,50 @@ function escapeText(value: string): string {
     .replaceAll("\n", " ");
 }
 
+async function validateObservedCanonicalBaseline(
+  paths: Paths,
+  state: MutationState,
+): Promise<void> {
+  if (!state.baseline || state.baselineRevision !== state.revision) {
+    throw new BundleMutationError(
+      "stale-canonical-baseline",
+      "The trusted canonical baseline is missing or stale; reconcile before writing.",
+    );
+  }
+  const actualPaths = (await listFiles(paths.wiki)).filter((path) => {
+    const name = basename(path);
+    return name !== "index.md" && name !== "log.md";
+  });
+  const expectedPaths = Object.entries(state.baseline)
+    .filter(([, entry]) => entry.kind !== "reserved")
+    .map(([path]) => path);
+  for (const path of new Set([...actualPaths, ...expectedPaths])) {
+    const expected = state.baseline[path];
+    const absolute = resolve(paths.wiki, path);
+    let actualHash: string | undefined;
+    try {
+      const stat = await lstat(absolute);
+      if (stat.isSymbolicLink()) {
+        throw new BundleMutationError(
+          "external-bundle-conflict",
+          "Canonical bytes contain an externally introduced symbolic link.",
+          path,
+        );
+      }
+      actualHash = hashBytes(await readFile(absolute));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    if (!expected || expected.hash !== actualHash) {
+      throw new BundleMutationError(
+        "external-bundle-conflict",
+        "Canonical bytes differ from the trusted baseline; reconcile them deliberately before writing.",
+        path,
+      );
+    }
+  }
+}
+
 async function validateReservedPreconditions(paths: Paths, state: MutationState): Promise<boolean> {
   let drift = false;
   const actualReserved = (await listFiles(paths.wiki)).filter((path) => {
@@ -1103,6 +1295,8 @@ async function installPreparedStage(
   nextState: MutationState,
   result: BundleMutationResult,
 ): Promise<BundleMutationResult> {
+  nextState.baseline = await captureBaseline(stage);
+  nextState.baselineRevision = nextState.revision;
   if ((await bundleContentHash(paths.wiki)) !== baselineHash) {
     await rm(stage, { recursive: true, force: true });
     throw new BundleMutationError(
@@ -1184,6 +1378,244 @@ async function bundleContentHash(root: string): Promise<string> {
     hash.update(bytes);
   }
   return hash.digest("hex");
+}
+
+async function captureBaseline(root: string): Promise<Record<string, BaselineEntry>> {
+  const read = await readKnowledgeBundle(root, {
+    nativeContractApplicable: false,
+    referenceOperations: [],
+  });
+  const concepts = new Map(read.concepts.map((concept) => [concept.path, concept]));
+  const baseline: Record<string, BaselineEntry> = {};
+  for (const path of await listFiles(root)) {
+    const absolute = resolve(root, path);
+    const stat = await lstat(absolute);
+    const bytes = stat.isSymbolicLink()
+      ? Buffer.from(`symlink:${await readlink(absolute)}`)
+      : await readFile(absolute);
+    const concept = concepts.get(path);
+    const name = basename(path);
+    baseline[path] = {
+      kind: concept ? "concept" : name === "index.md" || name === "log.md" ? "reserved" : "asset",
+      hash: hashBytes(bytes),
+      conceptTimestamp:
+        typeof concept?.metadata?.timestamp === "string" ? concept.metadata.timestamp : undefined,
+      conceptSemanticHash: concept?.metadata
+        ? hashIntent({ metadata: concept.metadata, body: concept.body })
+        : undefined,
+      rawSourceId:
+        typeof concept?.metadata?.llm_wiki_raw_source_id === "string"
+          ? concept.metadata.llm_wiki_raw_source_id
+          : undefined,
+      brokenLinks: concept?.links
+        .filter(({ classification }) => classification === "broken")
+        .map(({ originalDestination }) => originalDestination)
+        .sort(),
+    };
+  }
+  return baseline;
+}
+
+async function analyzeExternalBundle(
+  paths: Paths,
+  state: MutationState,
+  resolution: Pick<ReconcileExternalBundleRequest, "reaffirmConcepts" | "moveResolutions"> = {},
+): Promise<ExternalReconciliationInspection> {
+  const diagnostics: ExternalReconciliationDiagnostic[] = [];
+  if (!state.baseline || state.baselineRevision !== state.revision) {
+    return {
+      status: "conflict",
+      revision: state.revision,
+      changes: [],
+      diagnostics: [
+        {
+          code: "stale-canonical-baseline",
+          message:
+            "The trusted canonical baseline is missing or does not match the current Bundle Revision.",
+        },
+      ],
+    };
+  }
+
+  const observed = await captureBaseline(paths.wiki);
+  const allPaths = new Set([...Object.keys(state.baseline), ...Object.keys(observed)]);
+  const changes: ExternalBundleChange[] = [];
+  const deletedConcepts: string[] = [];
+  const addedConcepts: string[] = [];
+  for (const path of [...allPaths].sort()) {
+    const before = state.baseline[path];
+    const after = observed[path];
+    if (before?.hash === after?.hash) continue;
+    const kind = after?.kind ?? before?.kind ?? "asset";
+    const operation = before ? (after ? "modified" : "deleted") : "added";
+    changes.push({ kind, operation, path });
+    if (kind === "concept" && operation === "deleted") deletedConcepts.push(path);
+    if (kind === "concept" && operation === "added") addedConcepts.push(path);
+  }
+
+  const resolvedMoves = new Map(
+    (resolution.moveResolutions ?? []).map(({ fromPath, toPath }) => [toPath, fromPath]),
+  );
+  for (const toPath of addedConcepts) {
+    const after = observed[toPath];
+    if (!after) continue;
+    const candidates = deletedConcepts.filter(
+      (fromPath) => state.baseline?.[fromPath]?.hash === after.hash,
+    );
+    const requestedFrom = resolvedMoves.get(toPath);
+    const resolvedFrom =
+      requestedFrom && candidates.includes(requestedFrom) ? requestedFrom : undefined;
+    const fromPath = resolvedFrom ?? candidates[0];
+    if (candidates.length > 1 && !resolvedFrom) {
+      diagnostics.push({
+        code: "ambiguous-concept-move",
+        message: `Observed Concept ${toPath} could have moved from multiple baseline identities.`,
+        path: toPath,
+      });
+      continue;
+    }
+    if (fromPath && (candidates.length === 1 || resolvedFrom !== undefined)) {
+      const added = changes.find(({ path }) => path === toPath);
+      const removed = changes.find(({ path }) => path === fromPath);
+      if (added && removed) {
+        added.operation = "moved";
+        added.fromPath = fromPath;
+        changes.splice(changes.indexOf(removed), 1);
+      }
+    }
+  }
+
+  let read: KnowledgeBundleReadResult;
+  try {
+    read = await readKnowledgeBundle(paths.wiki, {
+      nativeContractApplicable: false,
+      referenceOperations: [],
+    });
+  } catch (error) {
+    diagnostics.push({
+      code: "external-bundle-unreadable",
+      message: error instanceof Error ? error.message : "Observed Bundle cannot be read safely.",
+    });
+    return { status: "conflict", revision: state.revision, changes, diagnostics };
+  }
+  const changedConceptPaths = new Set(
+    changes.filter(({ kind }) => kind === "concept").map(({ path }) => path),
+  );
+  const reaffirmed = new Set(resolution.reaffirmConcepts ?? []);
+  for (const diagnostic of read.nativeContract.diagnostics) {
+    if (diagnostic.severity !== "error") continue;
+    if (basename(diagnostic.path) === "index.md" || basename(diagnostic.path) === "log.md")
+      continue;
+    if (diagnostic.code === "core-field-timestamp" || diagnostic.code === "concept-timestamp") {
+      if (!reaffirmed.has(diagnostic.path)) {
+        diagnostics.push({
+          code: "concept-reaffirmation-required",
+          message:
+            "The Concept has no trustworthy timestamp; explicitly reaffirm its current knowledge.",
+          path: diagnostic.path,
+        });
+      }
+      continue;
+    }
+    diagnostics.push({ code: diagnostic.code, message: diagnostic.message, path: diagnostic.path });
+  }
+
+  for (const concept of read.concepts) {
+    if (!changedConceptPaths.has(concept.path) || !concept.metadata) continue;
+    const entry = observed[concept.path];
+    const change = changes.find(({ kind, path }) => kind === "concept" && path === concept.path);
+    const previous = change?.fromPath
+      ? state.baseline[change.fromPath]
+      : state.baseline[concept.path];
+    const timestamp =
+      typeof concept.metadata.timestamp === "string" ? concept.metadata.timestamp : undefined;
+    const meaningful =
+      !previous ||
+      previous.conceptSemanticHash !== entry?.conceptSemanticHash ||
+      change?.operation === "moved";
+    if (
+      previous &&
+      meaningful &&
+      timestamp === previous.conceptTimestamp &&
+      !reaffirmed.has(concept.path)
+    ) {
+      diagnostics.push({
+        code: "concept-reaffirmation-required",
+        message:
+          "Externally changed knowledge retained its prior timestamp; explicitly reaffirm it instead of inventing history.",
+        path: concept.path,
+      });
+    }
+    if (previous && previous.rawSourceId !== entry?.rawSourceId) {
+      diagnostics.push({
+        code: "source-provenance-conflict",
+        message: "External reconciliation cannot reassign a Source provenance identity.",
+        path: concept.path,
+      });
+    }
+  }
+
+  for (const concept of read.concepts) {
+    const previous = state.baseline[concept.path];
+    const previousBroken = new Set(previous?.brokenLinks ?? []);
+    const newlyBroken = concept.links.filter(
+      ({ classification, originalDestination }) =>
+        classification === "broken" && !previousBroken.has(originalDestination),
+    );
+    if (newlyBroken.length > 0) {
+      diagnostics.push({
+        code: "ambiguous-link-resolution",
+        message: `External changes leave an unresolved Concept link: ${newlyBroken[0]?.originalDestination}`,
+        path: concept.path,
+      });
+    }
+  }
+
+  const provenance = new Map<string, string>();
+  for (const concept of read.concepts) {
+    const id = concept.metadata?.llm_wiki_raw_source_id;
+    if (typeof id !== "string") continue;
+    const previous = provenance.get(id);
+    if (previous) {
+      diagnostics.push({
+        code: "source-provenance-conflict",
+        message: `Raw Source Identifier is claimed by both ${previous} and ${concept.path}.`,
+        path: concept.path,
+      });
+    } else provenance.set(id, concept.path);
+  }
+
+  for (const change of changes.filter(({ kind }) => kind === "reserved")) {
+    const actual = observed[change.path];
+    if (!actual || state.trustedReservedHashes.includes(actual.hash)) continue;
+    diagnostics.push({
+      code: "reserved-document-conflict",
+      message:
+        "Reserved Document contains an unrecognized external edit and will not be overwritten.",
+      path: change.path,
+    });
+  }
+
+  const uniqueDiagnostics = diagnostics.filter(
+    (item, index, items) =>
+      items.findIndex(({ code, path }) => code === item.code && path === item.path) === index,
+  );
+  const hasConflict = uniqueDiagnostics.some(
+    ({ code }) => code !== "concept-reaffirmation-required",
+  );
+  return {
+    status:
+      changes.length === 0
+        ? "no-op"
+        : hasConflict
+          ? "conflict"
+          : uniqueDiagnostics.length > 0
+            ? "reaffirmation-required"
+            : "ready",
+    revision: state.revision,
+    changes,
+    diagnostics: uniqueDiagnostics,
+  };
 }
 
 async function changedFilePaths(before: string, after: string): Promise<string[]> {
@@ -1396,6 +1828,7 @@ function hashRequestIntent(
     | "mutate-bundle"
     | "initialize"
     | "write-concept"
+    | "external-reconciliation"
     | "move-concept"
     | "delete-concept"
     | "write-bundle-asset",
@@ -1405,7 +1838,8 @@ function hashRequestIntent(
     | MoveConceptRequest
     | DeleteConceptRequest
     | WriteBundleAssetRequest
-    | MutateKnowledgeBundleRequest,
+    | MutateKnowledgeBundleRequest
+    | ReconcileExternalBundleRequest,
 ): string {
   const { vaultRoot: _vaultRoot, ...intent } = request;
   return hashIntent({ operation, ...intent });

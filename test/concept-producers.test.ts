@@ -13,6 +13,7 @@ import {
   BundleMutationError,
   initializeKnowledgeBundle,
   readControlledKnowledgeBundle,
+  reconcileExternalBundle,
 } from "../extensions/llm-wiki/lib/okf-mutation.js";
 
 const roots: string[] = [];
@@ -168,10 +169,17 @@ describe("native OKF non-source Concept producers", () => {
       }),
     ).rejects.toMatchObject({ code: "stale-revision" });
 
+    const reconciled = await reconcileExternalBundle({
+      vaultRoot: root,
+      mutationId: "reconcile-third-party-metadata",
+      expectedRevision: created.revision,
+      committedAt: "2026-09-01T10:00:30Z",
+      reaffirmConcepts: ["requirements/oauth-login.md"],
+    });
     const updated = await writeRequirementConcept({
       vaultRoot: root,
       mutationId: "requirement-update",
-      expectedRevision: created.revision,
+      expectedRevision: reconciled.revision,
       committedAt: "2026-09-01T10:01:00Z",
       slug: "oauth-login",
       title: "OAuth Login",
@@ -182,7 +190,7 @@ describe("native OKF non-source Concept producers", () => {
       traceability: ["product-brief"],
       acceptanceCriteria: ["Google sign-in succeeds"],
     });
-    expect(updated.revision).toBe(3);
+    expect(updated.revision).toBe(4);
     const page = await readFile(path, "utf8");
     expect(page).toContain("third_party: keep-me");
     expect(page).toContain("status: approved");
