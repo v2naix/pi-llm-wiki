@@ -50,7 +50,7 @@ import {
 import { applySessionStartStatus } from "./lib/visible-status.js";
 
 /**
- * @zosmaai/pi-llm-wiki — LLM Wiki extension for Pi
+ * @v2naix/pi-llm-wiki — LLM Wiki extension for Pi
  *
  * Registers 13 custom tools and installs guardrails (+3 agent-trajectory tools
  * when `llm-wiki.trajectories` is enabled — opt-in, off by default, issue #80):

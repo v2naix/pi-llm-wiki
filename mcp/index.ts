@@ -5,7 +5,7 @@
  *
  * Exposes wiki tools over the Model Context Protocol (MCP).
  * Run: node mcp/index.js
- * Or via package.json: pi install npm:@zosmaai/pi-llm-wiki && node mcp/index.js
+ * Pi installation: pi install git:github.com/v2naix/pi-llm-wiki@main
  *
  * Environment:
  *   WIKI_ROOT — path to wiki vault (default: auto-detect from cwd)

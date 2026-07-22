@@ -66,13 +66,13 @@ jobs:
         with:
           name: "v${{ steps.version.outputs.VERSION }}"
           body: |
-            ## 📦 @zosmaai/pi-llm-wiki v${{ steps.version.outputs.VERSION }}
+            ## 📦 @v2naix/pi-llm-wiki v${{ steps.version.outputs.VERSION }}
 
             ${{ steps.notes.outputs.NOTES }}
 
             ### Install
             \`\`\`bash
-            pi install npm:@zosmaai/pi-llm-wiki@${{ steps.version.outputs.VERSION }}
+            pi install npm:@v2naix/pi-llm-wiki@${{ steps.version.outputs.VERSION }}
             \`\`\`
 
             ### What's Included

@@ -1,5 +1,5 @@
 {
-  "name": "@zosmaai/pi-llm-wiki",
+  "name": "@v2naix/pi-llm-wiki",
   "version": "0.6.3",
   "description": "Self-maintaining LLM Wiki for Pi — Karpathy-pattern knowledge base with immutable source capture, automated ingestion, search, linting, and Obsidian-compatible vault. auto-updating personal & company wiki.",
   "keywords": [
@@ -27,12 +27,12 @@
   "author": "zosmaai",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zosmaai/pi-llm-wiki.git"
+    "url": "git+https://github.com/v2naix/pi-llm-wiki.git"
   },
   "bugs": {
-    "url": "https://github.com/zosmaai/pi-llm-wiki/issues"
+    "url": "https://github.com/v2naix/pi-llm-wiki/issues"
   },
-  "homepage": "https://github.com/zosmaai/pi-llm-wiki#readme",
+  "homepage": "https://github.com/v2naix/pi-llm-wiki#readme",
   "files": [
     "extensions",
     "skills",
@@ -63,7 +63,7 @@
     "extensions": ["./extensions"],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
-    "image": "https://raw.githubusercontent.com/zosmaai/pi-llm-wiki/main/assets/screenshot.png",
+    "image": "https://raw.githubusercontent.com/v2naix/pi-llm-wiki/main/assets/screenshot.png",
     "mcpservers": {
       "llm-wiki": "node ./mcp/index.ts"
     }

@@ -4,7 +4,7 @@ Instructions for AI agents working on this codebase.
 
 ## Project
 
-`v2naix/pi-llm-wiki` is a fork of the `@zosmaai/pi-llm-wiki` Pi package. It maintains a Markdown knowledge base with immutable source capture, controlled knowledge writes, retrieval, linting, and Obsidian-compatible navigation. Unless a separate publishing decision changes it, `@zosmaai/pi-llm-wiki` remains the upstream npm package identity rather than this repository's identity.
+`@v2naix/pi-llm-wiki` is the package identity of this maintained fork of [`@zosmaai/pi-llm-wiki`](https://github.com/zosmaai/pi-llm-wiki). It maintains a Markdown knowledge base with immutable source capture, controlled knowledge writes, retrieval, linting, and Obsidian-compatible navigation. Install this fork from `git:github.com/v2naix/pi-llm-wiki@main`; the upstream npm package is a separate distribution and does not contain fork-only changes.
 
 ## Sources of truth
 

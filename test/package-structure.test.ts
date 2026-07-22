@@ -6,7 +6,7 @@ import { readFile, rootDir } from "./helpers.js";
 describe("package structure", () => {
   it("should have a valid package.json with pi manifest", () => {
     const pkg = JSON.parse(readFile(join(rootDir, "package.json")));
-    expect(pkg.name).toBe("@zosmaai/pi-llm-wiki");
+    expect(pkg.name).toBe("@v2naix/pi-llm-wiki");
     expect(pkg.keywords).toContain("pi-package");
     expect(pkg.pi.extensions).toContain("./extensions");
     expect(pkg.pi.skills).toContain("./skills");
@@ -156,8 +156,8 @@ describe("package structure", () => {
 
   it("should have a comprehensive README with install instructions", () => {
     const readme = readFile(join(rootDir, "README.md"));
-    expect(readme).toContain("@zosmaai/pi-llm-wiki");
-    expect(readme).toContain("pi install npm:@zosmaai/pi-llm-wiki");
+    expect(readme).toContain("v2naix/pi-llm-wiki");
+    expect(readme).toContain("pi install git:github.com/v2naix/pi-llm-wiki@main");
     expect(readme).toContain("Karpathy");
     expect(readme).toContain("Obsidian");
   });

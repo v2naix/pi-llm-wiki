@@ -1,29 +1,28 @@
 <div align="center">
 
-# @zosmaai/pi-llm-wiki
+# v2naix/pi-llm-wiki
 
 <a href="./README.md">English</a> | <a href="./README.zh.md">中文</a> | <a href="./README.es.md">Español</a> | <a href="./README.ja.md">日本語</a> | <a href="./README.de.md">Deutsch</a> | <a href="./README.fr.md">Français</a> | <a href="./README.pt.md">Português</a> | <a href="./README.ru.md">Русский</a> | **한국어** | <a href="./README.hi.md">हिंदी</a>
 
-[![CI](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/ci.yml/badge.svg)](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/@zosmaai/pi-llm-wiki)](https://www.npmjs.com/package/@zosmaai/pi-llm-wiki)
-[![npm downloads](https://img.shields.io/npm/dm/@zosmaai/pi-llm-wiki)](https://www.npmjs.com/package/@zosmaai/pi-llm-wiki)
-[![Coverage](https://codecov.io/gh/zosmaai/pi-llm-wiki/branch/main/graph/badge.svg)](https://codecov.io/gh/zosmaai/pi-llm-wiki)
+[![CI](https://github.com/v2naix/pi-llm-wiki/actions/workflows/ci.yml/badge.svg)](https://github.com/v2naix/pi-llm-wiki/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![CodeQL](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/codeql.yml/badge.svg)](https://github.com/zosmaai/pi-llm-wiki/actions/workflows/codeql.yml)
-[![GitHub Repo Stars](https://img.shields.io/github/stars/zosmaai/pi-llm-wiki?style=social)](https://github.com/zosmaai/pi-llm-wiki/stargazers)
+[![CodeQL](https://github.com/v2naix/pi-llm-wiki/actions/workflows/codeql.yml/badge.svg)](https://github.com/v2naix/pi-llm-wiki/actions/workflows/codeql.yml)
+[![GitHub Repo Stars](https://img.shields.io/github/stars/v2naix/pi-llm-wiki?style=social)](https://github.com/v2naix/pi-llm-wiki/stargazers)
 
 </div>
 
 <br/>
 
+> **Maintained fork:** This is [`v2naix/pi-llm-wiki`](https://github.com/v2naix/pi-llm-wiki), based on the original [`zosmaai/pi-llm-wiki`](https://github.com/zosmaai/pi-llm-wiki). Install this repository from Git to use its Native OKF implementation. The upstream `@zosmaai/pi-llm-wiki` npm package is a separate distribution and does not include fork-only changes.
+
 <div align="center">
-  <a href="https://github.com/zosmaai/pi-llm-wiki/stargazers">
+  <a href="https://github.com/v2naix/pi-llm-wiki/stargazers">
     <img src="./assets/thank-you-for-the-star.png" alt="Thank you for starring pi-llm-wiki!" width="100%" />
   </a>
   <br/>
   <sub>
     If you find pi-llm-wiki useful,
-    <a href="https://github.com/zosmaai/pi-llm-wiki">⭐ star the repo</a> —
+    <a href="https://github.com/v2naix/pi-llm-wiki">⭐ star the repo</a> —
     it lets us know we're building something that matters.
   </sub>
 </div>
@@ -46,7 +45,7 @@ Support targets OKF v0.1 Draft at pinned specification commit `ee67a5ca27044ebe7
 ## 빠른 시작
 
 ```bash
-pi install npm:@zosmaai/pi-llm-wiki
+pi install git:github.com/v2naix/pi-llm-wiki@main
 ```
 
 The extension will proactively suggest creating a wiki on your first session. Alternatively:
@@ -333,10 +332,10 @@ The package ships a standalone MCP server exposing 5 wiki tools over stdio:
 
 ```bash
 # Auto-discovered by pi:
-pi install npm:@zosmaai/pi-llm-wiki
+pi install git:github.com/v2naix/pi-llm-wiki@main
 
 # Standalone with any MCP client:
-WIKI_ROOT=~/my-wiki node node_modules/@zosmaai/pi-llm-wiki/mcp/index.js
+WIKI_ROOT=~/my-wiki node /path/to/pi-llm-wiki/mcp/index.ts
 ```
 
 Set `WIKI_ROOT` to your wiki vault directory. If unset, the server auto-detects from the current working directory.
@@ -398,19 +397,19 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, test patterns, and
 
 ## 스타 기록
 
-[![Star History Chart](https://api.star-history.com/svg?repos=zosmaai/pi-llm-wiki&type=Date)](https://star-history.com/#zosmaai/pi-llm-wiki&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=v2naix/pi-llm-wiki&type=Date)](https://star-history.com/#v2naix/pi-llm-wiki&Date)
 
 ## 기여자
 
-<a href="https://github.com/zosmaai/pi-llm-wiki/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=zosmaai/pi-llm-wiki" alt="Contributors" />
+<a href="https://github.com/v2naix/pi-llm-wiki/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=v2naix/pi-llm-wiki" alt="Contributors" />
 </a>
 
 ---
 
 <div align="center">
-  <sub>Built with ❤️ by <a href="https://github.com/zosmaai">zosmaai</a> · </sub>
-  <a href="https://pi.dev">pi.dev</a> · <a href="https://github.com/zosmaai/pi-llm-wiki/issues">Issues</a>
+  <sub>Maintained by <a href="https://github.com/v2naix">v2naix</a> · Based on work by <a href="https://github.com/zosmaai">zosmaai</a> · </sub>
+  <a href="https://pi.dev">pi.dev</a> · <a href="https://github.com/v2naix/pi-llm-wiki/issues">Issues</a>
 </div>
 
 ## 라이선스
