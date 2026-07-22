@@ -50,8 +50,14 @@ export type ControlledWriteOperation =
       kind: "capture-source";
       input:
         | { kind: "text"; text: string; title?: string }
-        | { kind: "file"; filePath: string; title?: string; pi: ExtensionAPI }
-        | { kind: "url"; url: string; title?: string; pi: ExtensionAPI };
+        | {
+            kind: "file";
+            filePath: string;
+            title?: string;
+            pi: ExtensionAPI;
+            signal?: AbortSignal;
+          }
+        | { kind: "url"; url: string; title?: string; pi: ExtensionAPI; signal?: AbortSignal };
       captureTimestamp?: string;
     } & MutationOperation)
   | ({

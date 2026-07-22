@@ -439,7 +439,7 @@ export function registerWikiDistillSkills(pi: ExtensionAPI): void {
     promptSnippet: "Distill captured trajectories into reusable skill pages",
     promptGuidelines: [
       "Use wiki_distill_skills to generalize one or more captured trajectories into reusable skill pages via wiki_ensure_page(type='skill').",
-      "Every skill page must cite the trajectory IDs it was distilled from with [[trajectories/TRJ-...]] wikilinks.",
+      "Record disclosure-safe trajectory provenance in the skill's trajectories metadata; do not link to private trajectory packets from the Canonical Knowledge Bundle.",
     ],
     parameters: Type.Object({
       trajectory_id: Type.Optional(
@@ -529,9 +529,9 @@ export function registerWikiDistillSkills(pi: ExtensionAPI): void {
               "1. Read packet.json (full tool-call sequence) and extracted.md (summary)",
               "2. Create/refine reusable skill pages via wiki_ensure_page(type='skill')",
               "3. Optionally write a case page (a specific past task) via wiki_ensure_page(type='case')",
-              "4. Cite the trajectory with [[trajectories/TRJ-...]] in each skill's 'Distilled From'",
+              "4. Record the trajectory ID in each skill's trajectories metadata without linking to private packet paths",
               "",
-              "The extension auto-updates metadata when you're done.",
+              "wiki_ensure_page commits the Concept through a Bundle Mutation and rebuilds Private Projections.",
             ].join("\n"),
           },
         ],

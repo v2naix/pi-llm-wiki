@@ -75,6 +75,10 @@ export function mockPiWithMarkItDown(markdownOutput: string) {
         if (cmd.includes("markitdown")) return { stdout: markdownOutput, stderr: "", code: 0 };
       }
       if (command === "cp") return { stdout: "", stderr: "", code: 0 };
+      if (command === "curl" && args.includes("-o")) {
+        writeFileSync(args[args.indexOf("-o") + 1], markdownOutput, "utf-8");
+        return { stdout: "", stderr: "", code: 0 };
+      }
       throw new Error(`Unexpected command: ${command}`);
     },
   };

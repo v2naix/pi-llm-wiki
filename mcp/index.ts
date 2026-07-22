@@ -346,14 +346,14 @@ server.registerTool(
   "wiki_retro",
   {
     description:
-      "Save an atomic insight from a completed task into the wiki. Creates a source packet and source page.",
+      "Save an atomic insight from a completed task as a Retrospective Concept through a Bundle Mutation.",
     inputSchema: z.object({
       slug: z.string().describe("Unique kebab-case identifier (e.g. 'jwt-revocation-pattern')"),
       title: z.string().describe("Short descriptive title (60 chars max)"),
       body: z
         .string()
         .describe(
-          "Markdown body explaining what was learned. Include [[wikilinks]] to related pages.",
+          "Markdown body explaining what was learned. Use standard Markdown links to related Concepts.",
         ),
       category: z
         .string()

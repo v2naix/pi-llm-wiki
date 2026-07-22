@@ -165,9 +165,9 @@ export default function (pi: ExtensionAPI) {
         "",
         "| Path | Owner | Rule |",
         "|------|-------|------|",
-        "| raw/** | extension | immutable after capture |",
-        "| wiki/** | model + user | editable knowledge pages |",
-        "| meta/* | extension | auto-generated |",
+        "| raw/** | extension | immutable private evidence after capture |",
+        "| wiki/** | Bundle Mutation + external editors | Canonical Knowledge Bundle |",
+        "| meta/* | extension | generated Private Projections |",
         "| . | human + explicit request | operating rules |",
       ].join("\n");
       writeFileSync(join(vaultPaths.dotWiki, "WIKI_SCHEMA.md"), schema, "utf-8");

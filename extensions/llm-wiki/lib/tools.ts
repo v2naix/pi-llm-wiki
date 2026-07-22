@@ -145,15 +145,15 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "",
         "| Path | Owner | Rule |",
         "|------|-------|------|",
-        "| raw/** | extension | immutable after capture |",
-        "| wiki/** | model + user | editable knowledge pages |",
-        "| meta/* | extension | auto-generated |",
+        "| raw/** | extension | immutable private evidence after capture |",
+        "| wiki/** | Bundle Mutation + external editors | Canonical Knowledge Bundle |",
+        "| meta/* | extension | generated Private Projections |",
         "| . | human + explicit request | operating rules |",
         "",
         "## Source Packet Format",
         "",
         "```",
-        "raw/sources/SRC-YYYY-MM-DD-NNN/",
+        "raw/sources/<opaque-raw-source-id>/",
         "  manifest.json",
         "  original/",
         "  extracted.md",
@@ -171,8 +171,8 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "",
         "## Linking Style",
         "",
-        "- Internal: [[folder/page-name]]",
-        "- Citation: [[sources/SRC-YYYY-MM-DD-NNN]]",
+        "- Internal: [Label](../folder/concept.md)",
+        "- Citation: [Source title](../sources/source-title.md)",
         "",
       ].join("\n");
       writeFileSync(join(paths.dotWiki, "WIKI_SCHEMA.md"), schema, "utf-8");
@@ -243,9 +243,15 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
 
       if (signal?.aborted) throw signal.reason;
       const input = params.url
-        ? ({ kind: "url", url: params.url, title: params.title, pi } as const)
+        ? ({ kind: "url", url: params.url, title: params.title, pi, signal } as const)
         : params.file_path
-          ? ({ kind: "file", filePath: params.file_path, title: params.title, pi } as const)
+          ? ({
+              kind: "file",
+              filePath: params.file_path,
+              title: params.title,
+              pi,
+              signal,
+            } as const)
           : params.text
             ? ({ kind: "text", text: params.text, title: params.title } as const)
             : undefined;
@@ -488,13 +494,11 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
               "",
               "**Next steps for each source:**",
               "1. Read extracted.md",
-              "2. Update the skeleton source page in wiki/sources/",
-              "3. Create/update entity pages in wiki/entities/",
-              "4. Create/update concept pages in wiki/concepts/",
-              "5. Add [[wikilinks]] cross-references",
-              "6. Flag contradictions",
+              "2. Do not edit Canonical Knowledge Bundle or Private Projection files directly",
+              "3. Retry wiki_ingest with background=true when the background synthesis runtime is available",
+              "4. Controlled synthesis will commit the Source Concept and related Concepts atomically",
               "",
-              "The extension will auto-update metadata when you're done.",
+              "Controlled synthesis atomically updates Concepts, Reserved Documents, and Private Projections.",
             ].join("\n"),
           },
         ],
@@ -513,10 +517,11 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
   pi.registerTool({
     name: "wiki_ensure_page",
     label: "Wiki Ensure Page",
-    description: "Resolve or safely create a canonical wiki page. Returns the page path.",
+    description:
+      "Resolve, create, or replace a canonical Concept through a Bundle Mutation. Returns the Concept path.",
     promptSnippet: "Create a canonical wiki page if it doesn't exist",
     promptGuidelines: [
-      "Use wiki_ensure_page before creating pages to avoid duplicates.",
+      "Use wiki_ensure_page to create or deliberately replace general Concepts.",
       "Search existing pages first with wiki_search.",
     ],
     parameters: Type.Object({
@@ -567,13 +572,14 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
       const folder = folderMap[type] || "concepts";
       const pagePath = join(paths.wiki, folder, `${slug}.md`);
 
-      if (existsSync(pagePath)) {
+      if (existsSync(pagePath) && params.content === undefined) {
         return {
-          content: [{ type: "text", text: `✅ Page already exists: \`${pagePath}\`` }],
-          details: { path: pagePath, created: false } as Record<string, unknown>,
+          content: [{ type: "text", text: `✅ Concept already exists: \`${pagePath}\`` }],
+          details: { path: pagePath, created: false, effect: "no-op" } as Record<string, unknown>,
         };
       }
 
+      const existed = existsSync(pagePath);
       const today = fmtDate();
       const payload = buildNativePagePayload(type, params.title, today, params.content);
       const result = await executePiWriteOperation(paths.root, {
@@ -591,11 +597,18 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
       if (runtime) scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
 
       return {
-        content: [{ type: "text", text: `✅ Created ${type} page: \`${pagePath}\`` }],
-        details: { path: pagePath, created: true, revision: result.revision } as Record<
-          string,
-          unknown
-        >,
+        content: [
+          {
+            type: "text",
+            text: `✅ ${existed ? "Updated" : "Created"} ${type} Concept: \`${pagePath}\``,
+          },
+        ],
+        details: {
+          path: pagePath,
+          created: !existed,
+          revision: result.revision,
+          effect: result.effect,
+        } as Record<string, unknown>,
       };
     },
   });
@@ -649,7 +662,7 @@ function buildPageTemplate(
 ): string {
   if (customContent) return customContent;
 
-  const base = `---\ntype: ${type}\ncreated: ${date}\nupdated: ${date}\nsources: []\n---\n\n# ${title}\n\n[Description to be filled]\n\n## Links\n\n- [[related-page]]\n`;
+  const base = `---\ntype: ${type}\ncreated: ${date}\nupdated: ${date}\nsources: []\n---\n\n# ${title}\n\n[Description to be filled]\n\n## Links\n\n- [Related Concept](../concepts/related-concept.md)\n`;
 
   if (type === "entity") {
     return base
@@ -779,7 +792,7 @@ function buildPageTemplate(
       "",
       "## Sources",
       "",
-      "- [[sources/SRC-...]] — original concept capture",
+      "- [Source Concept](../sources/source-concept.md) — original concept capture",
       "",
     ].join("\n");
   }

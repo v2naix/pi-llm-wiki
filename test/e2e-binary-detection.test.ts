@@ -314,7 +314,7 @@ describe("binary magic bytes detection", () => {
     const sourcePage = readFile(result.sourcePagePath);
     expect(sourcePage).toContain("type: source");
     expect(sourcePage).toContain(result.sourceId);
-    expect(sourcePage).toContain("## Summary");
-    expect(sourcePage).toContain("## Key Takeaways");
+    expect(sourcePage).toContain("llm_wiki_source_curation_state: blocked");
+    expect(sourcePage).toContain("Curation requires intervention");
   });
 });

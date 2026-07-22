@@ -39,8 +39,8 @@ type CurationState = "captured" | "synthesized" | "blocked";
 
 type CaptureInput =
   | { kind: "text"; text: string; title?: string }
-  | { kind: "file"; filePath: string; pi: ExtensionAPI; title?: string }
-  | { kind: "url"; url: string; pi: ExtensionAPI; title?: string };
+  | { kind: "file"; filePath: string; pi: ExtensionAPI; title?: string; signal?: AbortSignal }
+  | { kind: "url"; url: string; pi: ExtensionAPI; title?: string; signal?: AbortSignal };
 
 export interface CaptureControlledSourceRequest {
   vaultRoot: string;
@@ -92,6 +92,7 @@ interface PacketManifest {
   capture_timestamp: string;
   extraction_status: string;
   extractor: string;
+  content_type?: string;
   complete: true;
   extracted_sha256: string;
   original?: { name: string; sha256: string };
@@ -399,6 +400,7 @@ async function establishPacket(
       capture_timestamp: captureTimestamp,
       extraction_status: captured.content.extraction_status ?? "success",
       extractor: captured.content.extractor ?? "passthrough",
+      ...(captured.content.content_type ? { content_type: captured.content.content_type } : {}),
       complete: true,
       extracted_sha256: hash(captured.content.extracted),
       ...(captured.original ? { original: captured.original } : {}),
@@ -443,10 +445,11 @@ async function captureInput(
     const name = originalFileNameForUrl(input.url);
     const originalPath = join(originalDirectory, name);
     await exec(input.pi, "curl", ["-sL", "--max-time", "30", "-o", originalPath, input.url], {
+      signal: input.signal,
       timeout: 35_000,
     });
     const originalBytes = await requiredFile(originalPath);
-    const content = await extractUrlContent(input.pi, input.url);
+    const content = await extractUrlContent(input.pi, input.url, input.signal);
     const resource = disclosureSafeResource(input.url);
     return {
       title: input.title?.trim() || content.title || resource || "Captured web source",
@@ -459,6 +462,7 @@ async function captureInput(
     };
   }
 
+  input.signal?.throwIfAborted();
   const name = basename(input.filePath);
   const originalPath = join(originalDirectory, name);
   await copyFile(input.filePath, originalPath, 1);
@@ -479,6 +483,7 @@ async function captureInput(
         pi: input.pi,
         filePath: input.filePath,
         content: text,
+        signal: input.signal,
       });
       content = {
         extracted,
@@ -492,6 +497,7 @@ async function captureInput(
       pi: input.pi,
       filePath: input.filePath,
       content: text,
+      signal: input.signal,
     });
     content = {
       extracted,

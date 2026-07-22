@@ -101,7 +101,7 @@ export function registerWikiRetro(pi: ExtensionAPI, runtime?: Runtime): void {
       }),
       body: Type.String({
         description:
-          "Markdown body with [[wikilinks]] to related wiki pages. Explain what was learned.",
+          "Markdown body explaining what was learned. Use standard Markdown links to related Concepts.",
       }),
       category: Type.Optional(
         Type.String({
