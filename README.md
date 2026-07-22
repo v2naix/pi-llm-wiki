@@ -25,6 +25,14 @@ Turn raw sources (URLs, PDFs, markdown, JSON, XML) into a durable, interlinked, 
 
 ---
 
+## Native OKF support
+
+`.llm-wiki/wiki/` is the editable and distributable **Canonical Knowledge Bundle**. Pi Extension and MCP writes share one controlled application operation and Bundle Mutation semantics; direct canonical tool writes are blocked. Controlled Concepts store truthful `type`, `title`, `description`, and UTC `timestamp` fields and emit standard file-relative Markdown links.
+
+Native OKF Support targets OKF v0.1 Draft at pinned specification commit `ee67a5ca27044ebe7c38385f5b6cffc2305a9c1a`. Validation separately reports the stricter Native OKF Contract and named reference-tool operations at revision `d44368c15e38e7c92481c5992e4f9b5b421a801d`; this is not an unqualified “Google-compatible” claim. Raw Source Packets, configuration, projections, embeddings, events, and recovery state remain private and are not bundle content.
+
+See [Architecture](docs/architecture.md) and [API](docs/api.md).
+
 ## Quick Start
 
 ```bash

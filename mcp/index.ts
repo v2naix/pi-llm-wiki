@@ -12,14 +12,20 @@
  *   WIKI_MARKITDOWN_TIMEOUT_MS — PDF extraction timeout (default: 180000)
  */
 
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { readBundleRevision } from "../extensions/llm-wiki/lib/okf-mutation.js";
+import { readPrivateProjectionSync } from "../extensions/llm-wiki/lib/private-projections.js";
+import type { VaultPaths as NativeVaultPaths } from "../extensions/llm-wiki/lib/utils.js";
+import { executeMcpWriteOperation } from "./write-adapter.js";
 
 // ─── Wiki Vault Detection ──────────────────────────────
 
-interface VaultPaths {
+interface VaultPaths extends NativeVaultPaths {
   root: string;
   raw: string;
   rawSources: string;
@@ -89,6 +95,17 @@ function hasVault(): boolean {
   return existsSync(join(paths.dotWiki, "config.json"));
 }
 
+const mcpPi = {
+  exec(command: string, args: string[], options?: { timeout?: number; signal?: AbortSignal }) {
+    return new Promise<{ stdout: string; stderr: string; code: number }>((resolve, reject) => {
+      execFile(command, args, options, (error, stdout, stderr) => {
+        if (error && typeof error.code !== "number") return reject(error);
+        resolve({ stdout, stderr, code: typeof error?.code === "number" ? error.code : 0 });
+      });
+    });
+  },
+};
+
 // ─── Helpers ────────────────────────────────────────────
 
 function readJson<T>(path: string, defaultVal: T): T {
@@ -98,6 +115,16 @@ function readJson<T>(path: string, defaultVal: T): T {
   } catch {
     return defaultVal;
   }
+}
+
+function currentRegistry(paths: VaultPaths) {
+  return (
+    readPrivateProjectionSync(paths)?.registry ?? {
+      version: "2.0",
+      last_updated: "",
+      pages: {},
+    }
+  );
 }
 
 // ─── MCP Server ─────────────────────────────────────────
@@ -133,9 +160,7 @@ server.registerTool(
     }
 
     const paths = getPaths();
-    const registry = readJson<{
-      pages: Record<string, { type: string; title: string; [key: string]: unknown }>;
-    }>(join(paths.meta, "registry.json"), { pages: {} });
+    const registry = currentRegistry(paths);
 
     const terms = query
       .toLowerCase()
@@ -233,9 +258,7 @@ server.registerTool(
     }
 
     const paths = getPaths();
-    const registry = readJson<{
-      pages: Record<string, { type: string; title: string; [key: string]: unknown }>;
-    }>(join(paths.meta, "registry.json"), { pages: {} });
+    const registry = currentRegistry(paths);
 
     const q = query.toLowerCase();
     const matches = Object.entries(registry.pages)
@@ -287,15 +310,7 @@ server.registerTool(
     }
 
     const paths = getPaths();
-    const registry = readJson<{
-      version: string;
-      last_updated: string;
-      pages: Record<string, { type: string; title: string; [key: string]: unknown }>;
-    }>(join(paths.meta, "registry.json"), {
-      version: "1.0",
-      last_updated: "",
-      pages: {},
-    });
+    const registry = currentRegistry(paths);
 
     const config = readJson<Record<string, unknown>>(join(paths.dotWiki, "config.json"), {});
 
@@ -344,9 +359,20 @@ server.registerTool(
         .string()
         .optional()
         .describe("Category (e.g. frontend, architecture, devops, bugfix)"),
+      mutation_id: z
+        .string()
+        .optional()
+        .describe("Stable Mutation Identity for idempotent retries"),
+      expected_revision: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Expected Bundle Revision"),
+      committed_at: z.string().optional().describe("ISO 8601 UTC commit time"),
     }),
   },
-  async ({ slug, title, body, category }) => {
+  async ({ slug, title, body, category, mutation_id, expected_revision, committed_at }) => {
     if (!hasVault()) {
       return {
         content: [
@@ -359,24 +385,35 @@ server.registerTool(
       };
     }
 
-    const { saveInsight } = (await import("../extensions/llm-wiki/lib/retro.js")) as {
-      saveInsight: (
-        paths: Record<string, string>,
-        slug: string,
-        title: string,
-        body: string,
-        category?: string,
-      ) => { sourceId: string; packetPath: string; sourcePagePath: string };
-    };
-
     const vaultPaths = getPaths();
-    const result = saveInsight(vaultPaths, slug, title, body, category);
+    const mutationId = mutation_id ?? `mcp-retro-${randomUUID()}`;
+    const result = await executeMcpWriteOperation(vaultPaths.root, {
+      kind: "retrospective",
+      mutationId,
+      expectedRevision: expected_revision ?? (await readBundleRevision(vaultPaths.root)),
+      committedAt: committed_at,
+      slug,
+      title,
+      insight: body,
+      category,
+    });
 
     return {
       content: [
         {
           type: "text" as const,
-          text: `Insight saved: ${result.sourceId} — ${title}`,
+          text: JSON.stringify(
+            {
+              message: `Insight saved: ${result.conceptPath} — ${title}`,
+              status: result.status,
+              effect: result.effect,
+              revision: result.revision,
+              mutationId: result.mutationId,
+              validation: result.validation,
+            },
+            null,
+            2,
+          ),
         },
       ],
     };
@@ -394,9 +431,30 @@ server.registerTool(
       url: z.string().optional().describe("URL to capture"),
       file_path: z.string().optional().describe("Local file path to capture"),
       title: z.string().optional().describe("Title for the captured source"),
+      mutation_id: z
+        .string()
+        .optional()
+        .describe("Stable Mutation Identity for idempotent retries"),
+      expected_revision: z
+        .number()
+        .int()
+        .nonnegative()
+        .optional()
+        .describe("Expected Bundle Revision"),
+      committed_at: z.string().optional().describe("ISO 8601 UTC commit time"),
+      capture_timestamp: z.string().optional().describe("Immutable Source Capture Timestamp"),
     }),
   },
-  async ({ text, url: urlParam, file_path, title }) => {
+  async ({
+    text,
+    url: urlParam,
+    file_path,
+    title,
+    mutation_id,
+    expected_revision,
+    committed_at,
+    capture_timestamp,
+  }) => {
     if (!hasVault()) {
       return {
         content: [
@@ -410,46 +468,15 @@ server.registerTool(
     }
 
     const vaultPaths = getPaths();
-    let result: { sourceId: string };
-
-    if (urlParam) {
-      const { captureUrl } = (await import("../extensions/llm-wiki/lib/source-packet.js")) as {
-        captureUrl: (
-          pi: never,
-          paths: Record<string, string>,
-          url: string,
-          signal?: AbortSignal,
-        ) => Promise<{ sourceId: string }>;
-      };
-      result = await captureUrl(
-        { exec: async () => ({ stdout: "", stderr: "", code: 0 }) } as never,
-        vaultPaths,
-        urlParam,
-      );
-    } else if (file_path) {
-      const { captureFile } = (await import("../extensions/llm-wiki/lib/source-packet.js")) as {
-        captureFile: (
-          pi: never,
-          paths: Record<string, string>,
-          filePath: string,
-          signal?: AbortSignal,
-        ) => Promise<{ sourceId: string }>;
-      };
-      result = await captureFile(
-        { exec: async () => ({ stdout: "", stderr: "", code: 0 }) } as never,
-        vaultPaths,
-        file_path,
-      );
-    } else if (text) {
-      const { captureText } = (await import("../extensions/llm-wiki/lib/source-packet.js")) as {
-        captureText: (
-          paths: Record<string, string>,
-          text: string,
-          title?: string,
-        ) => { sourceId: string };
-      };
-      result = captureText(vaultPaths, text, title);
-    } else {
+    const pi = mcpPi as never;
+    const input = urlParam
+      ? ({ kind: "url", url: urlParam, title, pi } as const)
+      : file_path
+        ? ({ kind: "file", filePath: file_path, title, pi } as const)
+        : text
+          ? ({ kind: "text", text, title } as const)
+          : undefined;
+    if (!input) {
       return {
         content: [
           {
@@ -460,12 +487,34 @@ server.registerTool(
         isError: true,
       };
     }
+    const mutationId = mutation_id ?? `mcp-capture-${randomUUID()}`;
+    const result = await executeMcpWriteOperation(vaultPaths.root, {
+      kind: "capture-source",
+      mutationId,
+      expectedRevision: expected_revision ?? (await readBundleRevision(vaultPaths.root)),
+      committedAt: committed_at,
+      captureTimestamp: capture_timestamp,
+      input,
+    });
 
     return {
       content: [
         {
           type: "text" as const,
-          text: `Source captured: ${result.sourceId}`,
+          text: JSON.stringify(
+            {
+              message: `Source captured: ${result.conceptPath}`,
+              rawSourceId: result.rawSourceId,
+              curationState: result.curationState,
+              status: result.status,
+              effect: result.effect,
+              revision: result.revision,
+              mutationId: result.mutationId,
+              validation: result.validation,
+            },
+            null,
+            2,
+          ),
         },
       ],
     };

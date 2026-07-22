@@ -3,8 +3,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { captureRetrospectiveConcept, resolveProducerRevision } from "./concept-producers.js";
 import { scheduleReindex } from "./indexing.js";
+import { BundleMutationError, readBundleRevision } from "./okf-mutation.js";
+import { executePiWriteOperation } from "./pi-write-adapter.js";
 import type { Runtime } from "./runtime.js";
 import { type VaultPaths, resolveVaultPaths } from "./utils.js";
 
@@ -35,11 +36,25 @@ export async function saveInsight(
   },
 ): Promise<RetroResult> {
   const mutationId = opts?.mutationId ?? `retro-${randomUUID()}`;
-  const expectedRevision =
-    opts?.expectedRevision ??
-    (await resolveProducerRevision(paths.root, mutationId, opts?.committedAt));
-  const result = await captureRetrospectiveConcept({
-    vaultRoot: paths.root,
+  let expectedRevision = opts?.expectedRevision;
+  if (expectedRevision === undefined) {
+    try {
+      expectedRevision = await readBundleRevision(paths.root);
+    } catch (error) {
+      if (!(error instanceof BundleMutationError) || error.code !== "bundle-not-initialized") {
+        throw error;
+      }
+      const initialized = await executePiWriteOperation(paths.root, {
+        kind: "initialize",
+        mutationId: `${mutationId}-initialize`,
+        expectedRevision: 0,
+        committedAt: opts?.committedAt,
+      });
+      expectedRevision = initialized.revision;
+    }
+  }
+  const result = await executePiWriteOperation(paths.root, {
+    kind: "retrospective",
     mutationId,
     expectedRevision,
     committedAt: opts?.committedAt,
@@ -49,8 +64,8 @@ export async function saveInsight(
     category,
   });
   return {
-    slug: result.slug,
-    sourcePagePath: join(paths.wiki, result.conceptPath),
+    slug,
+    sourcePagePath: join(paths.wiki, result.conceptPath!),
     revision: result.revision,
   };
 }

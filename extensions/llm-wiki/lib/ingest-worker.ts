@@ -1,13 +1,12 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
 import type { Static } from "typebox";
-import { appendEvent } from "./metadata.js";
-import { rebuildPrivateProjections } from "./private-projections.js";
+import { readBundleRevision, readControlledKnowledgeBundle } from "./okf-mutation.js";
+import { executePiWriteOperation } from "./pi-write-adapter.js";
 import { runSubAgent } from "./subagent.js";
-import { type VaultPaths, fmtDate, slugify } from "./utils.js";
+import type { VaultPaths } from "./utils.js";
 
 /**
  * Background ingest synthesis (issue #65, part of epic #63).
@@ -79,128 +78,68 @@ export interface CommitResult {
 
 // ── deterministic persistence (no LLM) ────────────────────
 
-function buildEntityPage(
-  title: string,
-  description: string,
-  date: string,
-  sourceId: string,
-): string {
-  const desc = description.trim() || "One-line description.";
-  return `---\ntype: entity\ncreated: ${date}\nupdated: ${date}\nsources: [[[sources/${sourceId}]]]\n---\n\n# ${title}\n\n${desc}\n\n## Overview\n\n[Key facts]\n\n## Links\n\n- [[sources/${sourceId}]]\n`;
-}
-
-function buildConceptPage(
-  title: string,
-  definition: string,
-  date: string,
-  sourceId: string,
-): string {
-  const def = definition.trim() || "One-line definition.";
-  return `---\ntype: concept\ncreated: ${date}\nupdated: ${date}\nsources: [[[sources/${sourceId}]]]\n---\n\n# ${title}\n\n${def}\n\n## Definition\n\n[Clear explanation]\n\n## Links\n\n- [[sources/${sourceId}]]\n`;
-}
-
-/** Rebuild the source page from synthesis data, marking it ingested. */
-export function buildIngestedSourcePage(
-  manifest: Record<string, unknown>,
-  data: SynthesisData,
-  date: string,
-): string {
-  const id = String(manifest.id);
-  const title = String(manifest.title || id);
-  const url = manifest.url ? `\n> _Original: [${manifest.url}](${manifest.url})_` : "";
-  const format = String(manifest.format || "unknown");
-  const captured = String(manifest.captured || date);
-
-  const takeaways =
-    data.key_takeaways.length > 0
-      ? data.key_takeaways.map((t) => `- ${t.trim()}`).join("\n")
-      : "- [None recorded]";
-  const entities =
-    data.entities.length > 0
-      ? data.entities.map((e) => `- [[entities/${slugify(e.title)}]]`).join("\n")
-      : "- [None]";
-  const concepts =
-    data.concepts.length > 0
-      ? data.concepts.map((c) => `- [[concepts/${slugify(c.title)}]]`).join("\n")
-      : "- [None]";
-  const quotes =
-    data.quotes && data.quotes.length > 0
-      ? data.quotes
-          .map((q) => `> ${q.text.trim()}${q.attribution ? ` — ${q.attribution}` : ""}`)
-          .join("\n\n")
-      : "> [None recorded]";
-  const contradictions =
-    data.contradictions && data.contradictions.length > 0
-      ? `\n## Contradictions\n\n${data.contradictions.map((c) => `⚠️ **Contradiction**: ${c.trim()}`).join("\n")}\n`
-      : "";
-
-  return `---\ntype: source\nformat: ${format}\nsource_id: ${id}\nraw_path: raw/sources/${id}/extracted.md\ncaptured: ${captured}\nstatus: ingested\nupdated: ${date}\n---\n\n# ${title}${url}\n\n## Summary\n\n${data.summary.trim()}\n\n## Key Takeaways\n\n${takeaways}\n\n## Entities Mentioned\n\n${entities}\n\n## Concepts Mentioned\n\n${concepts}\n\n## Notable Quotes\n\n${quotes}\n${contradictions}\n## Source Packet\n\n- **ID:** \`[[sources/${id}]]\`\n- **Extracted:** [raw/sources/${id}/extracted.md](../raw/sources/${id}/extracted.md)\n- **Manifest:** [raw/sources/${id}/manifest.json](../raw/sources/${id}/manifest.json)\n`;
-}
-
-/**
- * Persist a synthesis deterministically: rewrite the source page (status →
- * ingested), create missing entity/concept pages (existing pages are linked,
- * never overwritten), and log the event. Pure file I/O — no LLM, no network.
- */
-export function commitSynthesis(
+/** Commit source synthesis through the same application operation used by public adapters. */
+export async function commitSynthesis(
   paths: VaultPaths,
   sourceId: string,
-  manifest: Record<string, unknown>,
+  _manifest: Record<string, unknown>,
   data: SynthesisData,
-  date: string = fmtDate(),
-): CommitResult {
-  const result: CommitResult = {
+  options: { mutationId?: string; expectedRevision?: number; committedAt?: string } = {},
+): Promise<CommitResult> {
+  const before = await readControlledKnowledgeBundle(paths.root);
+  const source = before.concepts.find(
+    ({ metadata }) => metadata?.llm_wiki_raw_source_id === sourceId,
+  );
+  if (!source)
+    throw new Error(`No controlled Source Concept owns Raw Source Identifier ${sourceId}.`);
+  const entityPaths = data.entities.map(({ title }) => `entities/${slug(title)}.md`);
+  const conceptPaths = data.concepts.map(({ title }) => `concepts/${slug(title)}.md`);
+  const contradictions = data.contradictions?.length ?? 0;
+  const summary = [
+    data.summary.trim(),
+    ...(contradictions
+      ? ["", "## Contradictions", "", ...data.contradictions!.map((item) => `- ${item.trim()}`)]
+      : []),
+  ].join("\n");
+  await executePiWriteOperation(paths.root, {
+    kind: "synthesize-source",
+    mutationId: options.mutationId ?? `ingest-${sourceId}`,
+    expectedRevision: options.expectedRevision ?? (await readBundleRevision(paths.root)),
+    committedAt: options.committedAt,
+    rawSourceId: sourceId,
+    sourceDescription: firstSentence(data.summary),
+    summary,
+    keyTakeaways: data.key_takeaways,
+    entities: data.entities,
+    topics: data.concepts.map(({ title, definition }) => ({ title, description: definition })),
+    quotes: data.quotes,
+  });
+  return {
     sourceId,
-    sourcePage: join(paths.wiki, "sources", `${sourceId}.md`),
-    entitiesCreated: [],
-    conceptsCreated: [],
+    sourcePage: join(paths.wiki, source.path),
+    entitiesCreated: slugs(entityPaths),
+    conceptsCreated: slugs(conceptPaths),
     entitiesLinked: [],
     conceptsLinked: [],
-    contradictions: data.contradictions?.length ?? 0,
+    contradictions,
   };
+}
 
-  // Source page (always rewritten from skeleton → ingested).
-  mkdirSync(join(paths.wiki, "sources"), { recursive: true });
-  writeFileSync(result.sourcePage, buildIngestedSourcePage(manifest, data, date), "utf-8");
+function slug(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+}
 
-  // Entity pages — create if absent, link if present.
-  mkdirSync(join(paths.wiki, "entities"), { recursive: true });
-  for (const e of data.entities) {
-    const slug = slugify(e.title);
-    if (!slug) continue;
-    const pagePath = join(paths.wiki, "entities", `${slug}.md`);
-    if (existsSync(pagePath)) {
-      result.entitiesLinked.push(slug);
-    } else {
-      writeFileSync(pagePath, buildEntityPage(e.title, e.description, date, sourceId), "utf-8");
-      result.entitiesCreated.push(slug);
-    }
-  }
+function slugs(paths: string[]): string[] {
+  return paths.map((path) => path.split("/").at(-1)!.slice(0, -3));
+}
 
-  // Concept pages — create if absent, link if present.
-  mkdirSync(join(paths.wiki, "concepts"), { recursive: true });
-  for (const c of data.concepts) {
-    const slug = slugify(c.title);
-    if (!slug) continue;
-    const pagePath = join(paths.wiki, "concepts", `${slug}.md`);
-    if (existsSync(pagePath)) {
-      result.conceptsLinked.push(slug);
-    } else {
-      writeFileSync(pagePath, buildConceptPage(c.title, c.definition, date, sourceId), "utf-8");
-      result.conceptsCreated.push(slug);
-    }
-  }
-
-  appendEvent(paths, {
-    kind: "ingest",
-    source_id: sourceId,
-    entities_created: result.entitiesCreated.length,
-    concepts_created: result.conceptsCreated.length,
-    contradictions: result.contradictions,
-    background: true,
-  });
-
-  return result;
+function firstSentence(value: string): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  return (text.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || text).slice(0, 240);
 }
 
 // ── sub-agent synthesis (LLM) ─────────────────────────────
@@ -254,7 +193,7 @@ export async function runIngestSynthesis(
       "Persist the structured synthesis of this source into wiki pages. Call exactly once.",
     parameters: CommitSynthesisSchema,
     execute: async (_id, params) => {
-      committed = commitSynthesis(paths, sourceId, manifest, params);
+      committed = await commitSynthesis(paths, sourceId, manifest, params, { mutationId: _id });
       const ack = `Committed: source page + ${committed.entitiesCreated.length} new entit${
         committed.entitiesCreated.length === 1 ? "y" : "ies"
       }, ${committed.conceptsCreated.length} new concept${
@@ -277,6 +216,5 @@ export async function runIngestSynthesis(
     signal,
   });
 
-  if (committed) await rebuildPrivateProjections(paths);
   return committed;
 }

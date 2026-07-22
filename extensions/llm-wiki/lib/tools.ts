@@ -3,20 +3,19 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { parse } from "yaml";
-import { writeGeneralConcept } from "./concept-producers.js";
 import { resolveEmbedder } from "./embeddings.js";
 import { scheduleReindex } from "./indexing.js";
 import { runIngestSynthesis } from "./ingest-worker.js";
 import { type Registry, appendEvent } from "./metadata.js";
-import { initializeKnowledgeBundle, readBundleRevision } from "./okf-mutation.js";
+import { readBundleRevision } from "./okf-mutation.js";
 import { type YamlValue, readKnowledgeBundle } from "./okf-reader.js";
+import { executePiWriteOperation } from "./pi-write-adapter.js";
 import {
   privateProjectionFreshSync,
   readPrivateProjectionSync,
   rebuildPrivateProjections,
 } from "./private-projections.js";
 import type { Runtime } from "./runtime.js";
-import { captureFile, captureText, captureUrl } from "./source-packet.js";
 import { parseModelRef } from "./task-config.js";
 import {
   type VaultPaths,
@@ -39,16 +38,9 @@ function getPaths(cwd?: string): VaultPaths {
 
 function currentRegistry(paths: VaultPaths): Registry {
   const projection = readPrivateProjectionSync(paths);
-  if (projection) {
-    return privateProjectionFreshSync(paths)
-      ? projection.registry
-      : { version: "2.0", last_updated: "", pages: {} };
-  }
-  return readJson<Registry>(join(paths.meta, "registry.json"), {
-    version: "1.0",
-    last_updated: "",
-    pages: {},
-  });
+  return projection && privateProjectionFreshSync(paths)
+    ? projection.registry
+    : { version: "2.0", last_updated: "", pages: {} };
 }
 
 function requireVault(paths: VaultPaths): { ok: true } | { ok: false; reason: string } {
@@ -131,8 +123,8 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
       const paths = getVaultPaths(root);
 
       ensureVaultStructure(paths);
-      await initializeKnowledgeBundle({
-        vaultRoot: paths.root,
+      const initialized = await executePiWriteOperation(paths.root, {
+        kind: "initialize",
         mutationId: _toolCallId,
         expectedRevision: 0,
       });
@@ -207,7 +199,13 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
             ].join("\n"),
           },
         ],
-        details: { root, mode, topic: params.topic } as Record<string, unknown>,
+        details: {
+          root,
+          mode,
+          topic: params.topic,
+          revision: initialized.revision,
+          effect: initialized.effect,
+        } as Record<string, unknown>,
       };
     },
   });
@@ -220,11 +218,11 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
     name: "wiki_capture_source",
     label: "Wiki Capture Source",
     description:
-      "Capture a URL, local file, or pasted text into an immutable source packet and skeleton source page.",
-    promptSnippet: "Capture a source into the wiki as an immutable packet",
+      "Capture a URL, local file, or pasted text as immutable private evidence and an honest Source Concept.",
+    promptSnippet: "Capture a source through the controlled Source Capture Operation",
     promptGuidelines: [
       "Use wiki_capture_source when the user provides a URL, file, or text to capture.",
-      "After capture, read the extracted text and update the skeleton source page.",
+      "Use wiki_ingest to commit a grounded synthesis; do not edit the Source Concept directly.",
     ],
     parameters: Type.Object({
       url: Type.Optional(Type.String({ description: "URL to capture" })),
@@ -243,52 +241,50 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
         };
       }
 
-      let result: {
-        sourceId: string;
-        packetPath: string;
-        sourcePagePath: string;
-        extracted: string;
-      };
-
-      if (params.url) {
-        result = await captureUrl(pi, paths, params.url, signal);
-      } else if (params.file_path) {
-        result = await captureFile(pi, paths, params.file_path, signal);
-      } else if (params.text) {
-        result = captureText(paths, params.text, params.title);
-      } else {
+      if (signal?.aborted) throw signal.reason;
+      const input = params.url
+        ? ({ kind: "url", url: params.url, title: params.title, pi } as const)
+        : params.file_path
+          ? ({ kind: "file", filePath: params.file_path, title: params.title, pi } as const)
+          : params.text
+            ? ({ kind: "text", text: params.text, title: params.title } as const)
+            : undefined;
+      if (!input) {
         return {
           content: [{ type: "text", text: "❌ Provide one of: url, file_path, or text" }],
           details: { error: "missing_source" } as Record<string, unknown>,
           isError: true,
         };
       }
-
-      if (runtime) {
-        scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
-      } else {
-        await rebuildPrivateProjections(paths);
-      }
+      const result = await executePiWriteOperation(paths.root, {
+        kind: "capture-source",
+        mutationId: _toolCallId,
+        expectedRevision: await readBundleRevision(paths.root),
+        input,
+      });
 
       return {
         content: [
           {
             type: "text",
             text: [
-              `✅ Captured source **${result.sourceId}**`,
+              `✅ Captured Source Concept **${result.conceptPath}**`,
               "",
-              `- Packet: \`${result.packetPath}\``,
-              `- Skeleton page: \`${result.sourcePagePath}\``,
+              `- Raw Source Identifier: \`${result.rawSourceId}\``,
+              `- Curation state: \`${result.curationState}\``,
+              `- Bundle Revision: ${result.revision}`,
               "",
-              "**Next:** Read the extracted text and update the source page with a proper summary, entities, and concepts.",
+              "**Next:** Use wiki_ingest to commit grounded synthesis through one Bundle Mutation.",
             ].join("\n"),
           },
         ],
         details: {
-          sourceId: result.sourceId,
-          packetPath: result.packetPath,
-          sourcePagePath: result.sourcePagePath,
-          extractedPreview: result.extracted.slice(0, 300),
+          rawSourceId: result.rawSourceId,
+          conceptPath: result.conceptPath,
+          curationState: result.curationState,
+          revision: result.revision,
+          effect: result.effect,
+          validation: result.validation,
         } as Record<string, unknown>,
       };
     },
@@ -357,15 +353,19 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
       }
 
       const packets = readdirSync(paths.rawSources)
-        .filter((d) => d.startsWith("SRC-"))
+        .filter((directory) => existsSync(join(paths.rawSources, directory, "manifest.json")))
         .sort();
 
       const registry = currentRegistry(paths);
       const ingested = new Set<string>();
-      for (const [id, entry] of Object.entries(registry.pages)) {
-        if (entry.type === "source" && (entry as Record<string, unknown>).status !== "skeleton") {
-          const base = id.split("/").pop();
-          if (base) ingested.add(base);
+      for (const entry of Object.values(registry.pages)) {
+        const metadata = entry as Record<string, unknown>;
+        if (
+          entry.type === "source" &&
+          metadata.llm_wiki_source_curation_state === "synthesized" &&
+          typeof metadata.llm_wiki_raw_source_id === "string"
+        ) {
+          ingested.add(metadata.llm_wiki_raw_source_id);
         }
       }
 
@@ -576,8 +576,8 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
 
       const today = fmtDate();
       const payload = buildNativePagePayload(type, params.title, today, params.content);
-      const result = await writeGeneralConcept({
-        vaultRoot: paths.root,
+      const result = await executePiWriteOperation(paths.root, {
+        kind: "write-concept",
         mutationId: _toolCallId,
         expectedRevision: await readBundleRevision(paths.root),
         path: `${folder}/${slug}.md`,
@@ -934,8 +934,8 @@ async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string>
         const pagePath = join(paths.wiki, folder, `${name}.md`);
         if (existsSync(pagePath)) continue;
         const title = name.replace(/-/g, " ");
-        await writeGeneralConcept({
-          vaultRoot: paths.root,
+        await executePiWriteOperation(paths.root, {
+          kind: "write-concept",
           mutationId: `lint-stub-${folder}-${name}-${fmtDate()}`,
           expectedRevision: await readBundleRevision(paths.root),
           path: `${folder}/${name}.md`,

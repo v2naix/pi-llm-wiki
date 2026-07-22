@@ -2,6 +2,8 @@
 
 All tools registered by the extension. Parameters marked `?` are optional.
 
+Pi Extension and MCP write methods are Controlled Write Adapters. Equivalent operations use one application-layer operation and Bundle Mutation implementation. Canonical results distinguish `effect: "canonical"` from `effect: "no-op"`, return the Bundle Revision and Mutation Identity, and include independent pinned OKF, Native OKF Contract, and named reference-operation validation results. Private-only projection/administrative operations never claim a canonical commit.
+
 13 tools are always registered. The 3 agent-trajectory tools
 (`wiki_capture_trajectory`, `wiki_distill_skills`, `wiki_recall_skill`) are **opt-in,
 off by default** (issue #80) — they are only registered when `llm-wiki.trajectories`
@@ -25,7 +27,7 @@ and metadata scaffolding.
 **Returns**
 
 ```
-details: { root: string, mode: string, topic: string }
+details: { root: string, mode: string, topic: string, revision: number, effect: "canonical" | "no-op" }
 ```
 
 Confirmation text includes the vault path, directory layout, and a prompt to capture the first source.
@@ -34,8 +36,7 @@ Confirmation text includes the vault path, directory layout, and a prompt to cap
 
 ## wiki_capture_source
 
-Capture a URL, local file, or pasted text into an immutable source packet and skeleton source page.
-Provide exactly one of `url`, `file_path`, or `text`.
+Capture a URL, local file, or pasted text through the controlled Source Capture Operation. It first establishes one complete immutable Raw Source Packet in the Private Vault Layer, then commits an honest reader-visible Source Concept. Provide exactly one of `url`, `file_path`, or `text`.
 
 **Parameters**
 
@@ -50,10 +51,12 @@ Provide exactly one of `url`, `file_path`, or `text`.
 
 ```
 details: {
-  sourceId: string,          // e.g. "SRC-2026-06-03-001"
-  packetPath: string,        // path to raw/sources/SRC-.../
-  sourcePagePath: string,    // path to wiki/sources/SRC-....md (skeleton)
-  extractedPreview: string   // first 300 chars of extracted content
+  rawSourceId: string,       // stable opaque provenance identity; not a path
+  conceptPath: string,       // bundle-relative Source Concept path
+  curationState: "captured" | "blocked",
+  revision: number,
+  effect: "canonical" | "no-op",
+  validation: ValidationReport
 }
 ```
 
@@ -63,9 +66,7 @@ Errors with `isError: true` if no vault exists or no source input is provided.
 
 ## wiki_ingest
 
-Return a batch of uningested source packets for the LLM to synthesize. Does not write anything
-itself — the model reads the returned extracted content, fills in the skeleton source page,
-and creates entity/concept pages.
+Select captured Source Concepts for synthesis. Background synthesis commits the Source Concept update and related entity/topic Concepts atomically through the shared Bundle Mutation boundary. It never asks the model to edit canonical files or private projection files directly.
 
 **Parameters**
 
@@ -78,7 +79,7 @@ and creates entity/concept pages.
 
 ```
 details: {
-  batch: string[],    // source IDs in this batch, e.g. ["SRC-2026-06-03-001"]
+  batch: string[],    // opaque Raw Source Identifiers
   remaining: number   // sources still waiting after this batch
 }
 ```

@@ -47,21 +47,21 @@ off by default** (issue #80) — registered only when `llm-wiki.trajectories` is
 
 ### Capture → Ingest → Synthesize
 
-1. `wiki_capture_source(url="...")` — creates packet + skeleton
-2. `wiki_ingest()` — get batch of sources needing synthesis
-3. Read `.llm-wiki/raw/sources/SRC-*/extracted.md`
-4. Update skeleton source page with summary, entities, concepts
-5. `wiki_ensure_page(type="entity", title="...")` for each entity
-6. Add `[[wikilinks]]` between related pages
-7. Extension auto-rebuilds metadata
+1. `wiki_capture_source(url="...")` — establishes an immutable private Raw Source Packet, then commits an honest `captured` Source Concept.
+2. `wiki_ingest()` — synthesizes private evidence through the controlled source lifecycle.
+3. The source update and related entity/topic Concepts commit as one Bundle Mutation.
+4. Controlled links use standard file-relative Markdown destinations ending in `.md`.
+5. Revision-bound Private Projections refresh after the canonical commit.
+
+Do not edit Source Concepts, Raw Source Packets, Navigation Indexes, or the root update log directly.
 
 ### Query → Answer → File
 
 1. `wiki_search(query="...")` to find relevant pages
 2. Read those pages
-3. Synthesize answer with `[[wikilink]]` citations
-4. If novel: create analysis page via `wiki_ensure_page(type="analysis")`
-5. Extension auto-updates metadata
+3. Synthesize answers with standard Markdown links to Concepts or external resources.
+4. If novel, create an analysis Concept via `wiki_ensure_page(type="analysis")`.
+5. The Controlled Write Adapter reports canonical/no-op classification, Bundle Revision, and profile-scoped validation.
 
 ### Task → Record → Distill (agent working-memory)
 
@@ -70,5 +70,5 @@ _Opt-in: enable first with `/wiki-trajectories on`._
 1. Finish a non-trivial task (debug, refactor, integration)
 2. `wiki_capture_trajectory(title="...")` — auto-extracts the tool-call trajectory from the live session into `raw/trajectories/TRJ-*` with a self-contained summary (no skeleton to flesh)
 3. `wiki_distill_skills()` — get undistilled trajectories
-4. `wiki_ensure_page(type="skill", title="...")` — generalize into a reusable skill citing `[[trajectories/TRJ-...]]` (and optionally a `case` page)
+4. Generalize into a reader-visible skill/case Concept with disclosure-safe provenance; never link to the private `raw/trajectories/` path.
 5. Next time, `wiki_recall_skill(query="...")` surfaces the skill/case before you start

@@ -1,24 +1,18 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { captureControlledSource } from "../extensions/llm-wiki/lib/controlled-source.js";
+import { type SynthesisData, commitSynthesis } from "../extensions/llm-wiki/lib/ingest-worker.js";
 import {
-  type SynthesisData,
-  buildIngestedSourcePage,
-  commitSynthesis,
-} from "../extensions/llm-wiki/lib/ingest-worker.js";
+  initializeKnowledgeBundle,
+  readControlledKnowledgeBundle,
+} from "../extensions/llm-wiki/lib/okf-mutation.js";
+import { privateProjectionFreshSync } from "../extensions/llm-wiki/lib/private-projections.js";
 import { ensureVaultStructure, getVaultPaths } from "../extensions/llm-wiki/lib/utils.js";
-
-const MANIFEST = {
-  id: "SRC-001",
-  title: "Attention Is All You Need",
-  format: "pdf",
-  url: "https://example.com/paper",
-  captured: "2026-06-01",
-};
 
 const DATA: SynthesisData = {
   summary:
-    "A paper introducing the Transformer architecture.\n\nIt replaces recurrence with attention.",
+    "A paper introducing the Transformer architecture. It replaces recurrence with attention.",
   key_takeaways: ["Self-attention scales well", "No recurrence needed"],
   entities: [
     { title: "Google Brain", description: "Research lab" },
@@ -26,44 +20,17 @@ const DATA: SynthesisData = {
   ],
   concepts: [
     { title: "Self-Attention", definition: "Tokens attend to each other" },
-    { title: "Transformer", definition: "Attention-based seq model" },
+    { title: "Transformer", definition: "Attention-based sequence model" },
   ],
   quotes: [{ text: "Attention is all you need", attribution: "Vaswani et al." }],
   contradictions: ["Earlier work claimed recurrence was essential"],
 };
 
-describe("buildIngestedSourcePage", () => {
-  it("produces a non-skeleton page with all sections filled", () => {
-    const page = buildIngestedSourcePage(MANIFEST, DATA, "2026-06-06");
-    expect(page).toContain("status: ingested");
-    expect(page).not.toContain("[LLM:");
-    expect(page).toContain("# Attention Is All You Need");
-    expect(page).toContain("Transformer architecture");
-    expect(page).toContain("- Self-attention scales well");
-    expect(page).toContain("[[concepts/self-attention]]");
-    expect(page).toContain("[[entities/google-brain]]");
-    expect(page).toContain("> Attention is all you need — Vaswani et al.");
-    expect(page).toContain("⚠️ **Contradiction**");
-    expect(page).toContain("[https://example.com/paper]");
-  });
-
-  it("degrades gracefully with empty arrays", () => {
-    const page = buildIngestedSourcePage(
-      { id: "SRC-X", title: "Empty" },
-      { summary: "s", key_takeaways: [], entities: [], concepts: [] },
-      "2026-06-06",
-    );
-    expect(page).toContain("status: ingested");
-    expect(page).toContain("- [None]");
-    expect(page).not.toContain("## Contradictions");
-  });
-});
-
 describe("commitSynthesis", () => {
   let tmpDir: string;
   let wikiDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tmpDir = join(
       import.meta.dirname,
       "..",
@@ -71,61 +38,70 @@ describe("commitSynthesis", () => {
       `ingest-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     wikiDir = join(tmpDir, "vault");
-    mkdirSync(wikiDir, { recursive: true });
+    await mkdir(wikiDir, { recursive: true });
     ensureVaultStructure(getVaultPaths(wikiDir));
+    await initializeKnowledgeBundle({
+      vaultRoot: wikiDir,
+      mutationId: "init",
+      expectedRevision: 0,
+      committedAt: "2026-06-06T08:00:00Z",
+    });
   });
-  afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
+  afterEach(async () => rm(tmpDir, { recursive: true, force: true }));
 
-  it("writes the source page (ingested) and creates entity/concept pages", () => {
+  async function capturedSource(): Promise<string> {
+    const captured = await captureControlledSource({
+      vaultRoot: wikiDir,
+      mutationId: "capture",
+      expectedRevision: 1,
+      committedAt: "2026-06-06T09:00:00Z",
+      captureTimestamp: "2026-06-06T08:30:00Z",
+      input: { kind: "text", text: "Attention research", title: "Attention Is All You Need" },
+    });
+    return captured.rawSourceId;
+  }
+
+  it("commits source, entity, and topic knowledge as one canonical Bundle Mutation", async () => {
     const paths = getVaultPaths(wikiDir);
-    const res = commitSynthesis(paths, "SRC-001", MANIFEST, DATA, "2026-06-06");
+    const rawSourceId = await capturedSource();
+    const res = await commitSynthesis(paths, rawSourceId, {}, DATA, {
+      mutationId: "synthesize",
+      committedAt: "2026-06-06T10:00:00Z",
+    });
+    const bundle = await readControlledKnowledgeBundle(wikiDir);
+    const source = bundle.concepts.find(
+      ({ metadata }) => metadata?.llm_wiki_raw_source_id === rawSourceId,
+    );
 
-    const sourcePage = readFileSync(join(paths.wiki, "sources", "SRC-001.md"), "utf-8");
-    expect(sourcePage).toContain("status: ingested");
-
+    expect(source?.metadata).toMatchObject({ llm_wiki_source_curation_state: "synthesized" });
+    expect(source?.body).toContain("[Transformer](../concepts/transformer.md)");
+    expect(source?.body).not.toContain("raw/sources/");
     expect(res.entitiesCreated.sort()).toEqual(["ashish-vaswani", "google-brain"]);
     expect(res.conceptsCreated.sort()).toEqual(["self-attention", "transformer"]);
-    expect(existsSync(join(paths.wiki, "entities", "google-brain.md"))).toBe(true);
-    expect(existsSync(join(paths.wiki, "concepts", "transformer.md"))).toBe(true);
     expect(res.contradictions).toBe(1);
-  });
-
-  it("links (does not overwrite) pages that already exist", () => {
-    const paths = getVaultPaths(wikiDir);
-    const existing = join(paths.wiki, "entities", "google-brain.md");
-    mkdirSync(join(paths.wiki, "entities"), { recursive: true });
-    writeFileSync(existing, "PRE-EXISTING CONTENT", "utf-8");
-
-    const res = commitSynthesis(paths, "SRC-001", MANIFEST, DATA, "2026-06-06");
-
-    expect(res.entitiesLinked).toContain("google-brain");
-    expect(res.entitiesCreated).not.toContain("google-brain");
-    expect(readFileSync(existing, "utf-8")).toBe("PRE-EXISTING CONTENT");
-  });
-
-  it("appends an ingest event and rebuilds registry on metadata rebuild", () => {
-    const paths = getVaultPaths(wikiDir);
-    commitSynthesis(paths, "SRC-001", MANIFEST, DATA, "2026-06-06");
-    const events = readFileSync(join(paths.meta, "events.jsonl"), "utf-8");
-    expect(events).toContain('"kind":"ingest"');
-    expect(events).toContain('"source_id":"SRC-001"');
-    expect(events).toContain('"background":true');
-  });
-
-  it("skips entries with empty slugs without throwing", () => {
-    const paths = getVaultPaths(wikiDir);
-    const res = commitSynthesis(
-      paths,
-      "SRC-002",
-      { id: "SRC-002", title: "T" },
-      {
-        summary: "s",
-        key_takeaways: [],
-        entities: [{ title: "!!!", description: "junk" }],
-        concepts: [],
-      },
-      "2026-06-06",
+    expect(bundle.relationships).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: source?.id, target: "concepts/transformer" }),
+      ]),
     );
-    expect(res.entitiesCreated).toEqual([]);
+    expect(privateProjectionFreshSync(paths)).toBe(true);
+    expect(await readFile(join(paths.wiki, "sources/index.md"), "utf8")).toContain(
+      "Attention Is All You Need",
+    );
+  });
+
+  it("returns the same result for an idempotent retry", async () => {
+    const paths = getVaultPaths(wikiDir);
+    const rawSourceId = await capturedSource();
+    const options = {
+      mutationId: "synthesize",
+      expectedRevision: 2,
+      committedAt: "2026-06-06T10:00:00Z",
+    };
+
+    const first = await commitSynthesis(paths, rawSourceId, {}, DATA, options);
+    const second = await commitSynthesis(paths, rawSourceId, {}, DATA, options);
+
+    expect(second).toEqual(first);
   });
 });
