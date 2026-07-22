@@ -1,27 +1,25 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { launchEmbedPages, reindexEmbeddings, resolveEmbedder } from "./embeddings.js";
+import { parse } from "yaml";
+import { resolveEmbedder } from "./embeddings.js";
 import { scheduleReindex } from "./indexing.js";
 import { runIngestSynthesis } from "./ingest-worker.js";
+import { type Registry, appendEvent } from "./metadata.js";
+import { readBundleRevision } from "./okf-mutation.js";
+import { type YamlValue, readKnowledgeBundle } from "./okf-reader.js";
+import { executePiWriteOperation } from "./pi-write-adapter.js";
 import {
-  type Registry,
-  appendEvent,
-  buildBacklinks,
-  buildRegistry,
-  rebuildMetadata,
-  rebuildMetadataLight,
-} from "./metadata.js";
+  readFreshPrivateProjectionSync,
+  rebuildPrivateProjections,
+} from "./private-projections.js";
 import type { Runtime } from "./runtime.js";
-import { captureFile, captureText, captureUrl } from "./source-packet.js";
 import { parseModelRef } from "./task-config.js";
 import {
   type VaultPaths,
   detectVaultFormat,
   ensureVaultStructure,
-  extractWikilinks,
-  findWikiPages,
   fmtDate,
   getVaultPaths,
   readJson,
@@ -35,6 +33,16 @@ import {
 
 function getPaths(cwd?: string): VaultPaths {
   return resolveVaultPaths(cwd ?? process.cwd());
+}
+
+function currentRegistry(paths: VaultPaths): Registry {
+  return (
+    readFreshPrivateProjectionSync(paths)?.registry ?? {
+      version: "2.0",
+      last_updated: "",
+      pages: {},
+    }
+  );
 }
 
 function requireVault(paths: VaultPaths): { ok: true } | { ok: false; reason: string } {
@@ -100,8 +108,8 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
     name: "wiki_bootstrap",
     label: "Wiki Bootstrap",
     description:
-      "Initialize a new LLM Wiki vault with the 4-layer architecture. " +
-      "Creates config, templates, schema, and metadata scaffolding.",
+      "Initialize a Canonical Knowledge Bundle and its Private Vault Layer. " +
+      "Creates configuration, templates, operating rules, and initial Reserved Documents.",
     promptSnippet: "Initialize a new LLM Wiki vault",
     promptGuidelines: ["Use wiki_bootstrap when the user wants to start a new wiki."],
     parameters: Type.Object({
@@ -117,6 +125,11 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
       const paths = getVaultPaths(root);
 
       ensureVaultStructure(paths);
+      const initialized = await executePiWriteOperation(paths.root, {
+        kind: "initialize",
+        mutationId: _toolCallId,
+        expectedRevision: 0,
+      });
 
       const config = {
         name: params.topic,
@@ -134,15 +147,15 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "",
         "| Path | Owner | Rule |",
         "|------|-------|------|",
-        "| raw/** | extension | immutable after capture |",
-        "| wiki/** | model + user | editable knowledge pages |",
-        "| meta/* | extension | auto-generated |",
+        "| raw/** | extension | immutable private evidence after capture |",
+        "| wiki/** | Bundle Mutation + external editors | Canonical Knowledge Bundle |",
+        "| meta/* | extension | generated Private Projections |",
         "| . | human + explicit request | operating rules |",
         "",
-        "## Source Packet Format",
+        "## Raw Source Packet Format",
         "",
         "```",
-        "raw/sources/SRC-YYYY-MM-DD-NNN/",
+        "raw/sources/<opaque-raw-source-id>/",
         "  manifest.json",
         "  original/",
         "  extracted.md",
@@ -160,13 +173,13 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "",
         "## Linking Style",
         "",
-        "- Internal: [[folder/page-name]]",
-        "- Citation: [[sources/SRC-YYYY-MM-DD-NNN]]",
+        "- Internal: [Label](../folder/concept.md)",
+        "- Citation: [Source title](../sources/source-title.md)",
         "",
       ].join("\n");
       writeFileSync(join(paths.dotWiki, "WIKI_SCHEMA.md"), schema, "utf-8");
 
-      rebuildMetadata(paths);
+      await rebuildPrivateProjections(paths);
       appendEvent(paths, { kind: "bootstrap", topic: params.topic, mode });
 
       return {
@@ -178,9 +191,9 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
               "**Scope:** project-local",
               "",
               "**Structure:**",
-              "- .llm-wiki/raw/sources/ — immutable source packets",
-              "- .llm-wiki/wiki/ — editable knowledge pages",
-              "- .llm-wiki/meta/ — auto-generated metadata",
+              "- .llm-wiki/raw/sources/ — immutable Raw Source Packets in the Private Vault Layer",
+              "- .llm-wiki/wiki/ — editable Canonical Knowledge Bundle",
+              "- .llm-wiki/meta/ — revision-bound Private Projections",
               "- .llm-wiki/ — config and templates",
               "- .llm-wiki/WIKI_SCHEMA.md — operating rules",
               "",
@@ -188,7 +201,13 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
             ].join("\n"),
           },
         ],
-        details: { root, mode, topic: params.topic } as Record<string, unknown>,
+        details: {
+          root,
+          mode,
+          topic: params.topic,
+          revision: initialized.revision,
+          effect: initialized.effect,
+        } as Record<string, unknown>,
       };
     },
   });
@@ -201,11 +220,11 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
     name: "wiki_capture_source",
     label: "Wiki Capture Source",
     description:
-      "Capture a URL, local file, or pasted text into an immutable source packet and skeleton source page.",
-    promptSnippet: "Capture a source into the wiki as an immutable packet",
+      "Capture a URL, local file, or pasted text as immutable private evidence and an honest Source Concept.",
+    promptSnippet: "Capture a source through the controlled Source Capture Operation",
     promptGuidelines: [
       "Use wiki_capture_source when the user provides a URL, file, or text to capture.",
-      "After capture, read the extracted text and update the skeleton source page.",
+      "Use wiki_ingest to commit a grounded synthesis; do not edit the Source Concept directly.",
     ],
     parameters: Type.Object({
       url: Type.Optional(Type.String({ description: "URL to capture" })),
@@ -224,52 +243,56 @@ export function registerWikiCaptureSource(pi: ExtensionAPI, runtime?: Runtime): 
         };
       }
 
-      let result: {
-        sourceId: string;
-        packetPath: string;
-        sourcePagePath: string;
-        extracted: string;
-      };
-
-      if (params.url) {
-        result = await captureUrl(pi, paths, params.url, signal);
-      } else if (params.file_path) {
-        result = await captureFile(pi, paths, params.file_path, signal);
-      } else if (params.text) {
-        result = captureText(paths, params.text, params.title);
-      } else {
+      if (signal?.aborted) throw signal.reason;
+      const input = params.url
+        ? ({ kind: "url", url: params.url, title: params.title, pi, signal } as const)
+        : params.file_path
+          ? ({
+              kind: "file",
+              filePath: params.file_path,
+              title: params.title,
+              pi,
+              signal,
+            } as const)
+          : params.text
+            ? ({ kind: "text", text: params.text, title: params.title } as const)
+            : undefined;
+      if (!input) {
         return {
           content: [{ type: "text", text: "❌ Provide one of: url, file_path, or text" }],
           details: { error: "missing_source" } as Record<string, unknown>,
           isError: true,
         };
       }
-
-      if (runtime) {
-        scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
-      } else {
-        rebuildMetadataLight(paths);
-      }
+      const result = await executePiWriteOperation(paths.root, {
+        kind: "capture-source",
+        mutationId: _toolCallId,
+        expectedRevision: await readBundleRevision(paths.root),
+        input,
+      });
 
       return {
         content: [
           {
             type: "text",
             text: [
-              `✅ Captured source **${result.sourceId}**`,
+              `✅ Captured Source Concept **${result.conceptPath}**`,
               "",
-              `- Packet: \`${result.packetPath}\``,
-              `- Skeleton page: \`${result.sourcePagePath}\``,
+              `- Raw Source Identifier: \`${result.rawSourceId}\``,
+              `- Curation state: \`${result.curationState}\``,
+              `- Bundle Revision: ${result.revision}`,
               "",
-              "**Next:** Read the extracted text and update the source page with a proper summary, entities, and concepts.",
+              "**Next:** Use wiki_ingest to commit grounded synthesis through one Bundle Mutation.",
             ].join("\n"),
           },
         ],
         details: {
-          sourceId: result.sourceId,
-          packetPath: result.packetPath,
-          sourcePagePath: result.sourcePagePath,
-          extractedPreview: result.extracted.slice(0, 300),
+          rawSourceId: result.rawSourceId,
+          conceptPath: result.conceptPath,
+          curationState: result.curationState,
+          revision: result.revision,
+          effect: result.effect,
+          validation: result.validation,
         } as Record<string, unknown>,
       };
     },
@@ -283,13 +306,13 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
     name: "wiki_ingest",
     label: "Wiki Ingest",
     description:
-      "Process uningested source packets. By default synthesis runs in the background (non-blocking) on the configured task model; pass background=false to return extracted content for the main agent to synthesize itself.",
-    promptSnippet: "Ingest source packets (background synthesis by default)",
+      "Process captured Raw Source Packets. By default controlled synthesis runs in the background (non-blocking) on the configured task model; pass background=false to inspect pending evidence.",
+    promptSnippet: "Synthesize captured Source Concepts (background by default)",
     promptGuidelines: [
       "Use wiki_ingest when the user wants to process captured sources.",
       "By default ingestion runs in the BACKGROUND — you'll get a notification, not extracted content. Do NOT synthesize those sources yourself.",
       "If the tool returns extracted content (background unavailable, or background=false), then read each source's extracted.md, update its source page, create entity/concept pages, and cross-reference.",
-      "The extension auto-updates metadata — you do NOT need to edit meta/ files.",
+      "The extension rebuilds Private Projections — never edit meta/ files manually.",
     ],
     parameters: Type.Object({
       source_id: Type.Optional(
@@ -338,19 +361,19 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
       }
 
       const packets = readdirSync(paths.rawSources)
-        .filter((d) => d.startsWith("SRC-"))
+        .filter((directory) => existsSync(join(paths.rawSources, directory, "manifest.json")))
         .sort();
 
-      const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-        version: "1.0",
-        last_updated: "",
-        pages: {},
-      });
+      const registry = currentRegistry(paths);
       const ingested = new Set<string>();
-      for (const [id, entry] of Object.entries(registry.pages)) {
-        if (entry.type === "source" && (entry as Record<string, unknown>).status !== "skeleton") {
-          const base = id.split("/").pop();
-          if (base) ingested.add(base);
+      for (const entry of Object.values(registry.pages)) {
+        const metadata = entry as Record<string, unknown>;
+        if (
+          entry.type === "source" &&
+          metadata.llm_wiki_source_curation_state === "synthesized" &&
+          typeof metadata.llm_wiki_raw_source_id === "string"
+        ) {
+          ingested.add(metadata.llm_wiki_raw_source_id);
         }
       }
 
@@ -419,16 +442,9 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
                 extracted: s.extracted,
               });
               if (committed) {
-                // Background semantic embeddings (#66): embed the pages this
-                // ingest just wrote, off-thread. No-op when unconfigured.
-                const pageIds = [
-                  `sources/${committed.sourceId}`,
-                  ...committed.entitiesCreated.map((e) => `entities/${e}`),
-                  ...committed.entitiesLinked.map((e) => `entities/${e}`),
-                  ...committed.conceptsCreated.map((c) => `concepts/${c}`),
-                  ...committed.conceptsLinked.map((c) => `concepts/${c}`),
-                ];
-                launchEmbedPages(runtime, launchCtx, paths, pageIds, `embed:ingest:${s.id}`);
+                // Publish embeddings with the same complete projection generation.
+                const embedder = resolveEmbedder(runtime.config);
+                if (embedder) await rebuildPrivateProjections(paths, { embedder });
               }
               const summary = committed
                 ? `LLM Wiki: ingested ${s.id} → ${committed.entitiesCreated.length} entit${committed.entitiesCreated.length === 1 ? "y" : "ies"}, ${committed.conceptsCreated.length} concept${committed.conceptsCreated.length === 1 ? "" : "s"}`
@@ -480,13 +496,11 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
               "",
               "**Next steps for each source:**",
               "1. Read extracted.md",
-              "2. Update the skeleton source page in wiki/sources/",
-              "3. Create/update entity pages in wiki/entities/",
-              "4. Create/update concept pages in wiki/concepts/",
-              "5. Add [[wikilinks]] cross-references",
-              "6. Flag contradictions",
+              "2. Do not edit Canonical Knowledge Bundle or Private Projection files directly",
+              "3. Retry wiki_ingest with background=true when the background synthesis runtime is available",
+              "4. Controlled synthesis will commit the Source Concept and related Concepts atomically",
               "",
-              "The extension will auto-update metadata when you're done.",
+              "Controlled synthesis atomically updates Concepts, Reserved Documents, and Private Projections.",
             ].join("\n"),
           },
         ],
@@ -505,10 +519,11 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
   pi.registerTool({
     name: "wiki_ensure_page",
     label: "Wiki Ensure Page",
-    description: "Resolve or safely create a canonical wiki page. Returns the page path.",
+    description:
+      "Resolve, create, or replace a canonical Concept through a Bundle Mutation. Returns the Concept path.",
     promptSnippet: "Create a canonical wiki page if it doesn't exist",
     promptGuidelines: [
-      "Use wiki_ensure_page before creating pages to avoid duplicates.",
+      "Use wiki_ensure_page to create or deliberately replace general Concepts.",
       "Search existing pages first with wiki_search.",
     ],
     parameters: Type.Object({
@@ -559,41 +574,95 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
       const folder = folderMap[type] || "concepts";
       const pagePath = join(paths.wiki, folder, `${slug}.md`);
 
-      if (existsSync(pagePath)) {
+      if (existsSync(pagePath) && params.content === undefined) {
         return {
-          content: [{ type: "text", text: `✅ Page already exists: \`${pagePath}\`` }],
-          details: { path: pagePath, created: false } as Record<string, unknown>,
+          content: [{ type: "text", text: `✅ Concept already exists: \`${pagePath}\`` }],
+          details: { path: pagePath, created: false, effect: "no-op" } as Record<string, unknown>,
         };
       }
 
+      const existed = existsSync(pagePath);
       const today = fmtDate();
-      const template = buildPageTemplate(type, params.title, today, params.content);
-      mkdirSync(join(paths.wiki, folder), { recursive: true });
-      writeFileSync(pagePath, template, "utf-8");
-
-      appendEvent(paths, {
-        kind: "ensure_page",
-        page_type: type,
+      const payload = buildNativePagePayload(type, params.title, today, params.content);
+      const result = await executePiWriteOperation(paths.root, {
+        kind: "write-concept",
+        mutationId: _toolCallId,
+        expectedRevision: await readBundleRevision(paths.root),
+        path: `${folder}/${slug}.md`,
+        type,
         title: params.title,
-        path: `${folder}/${slug}`,
+        description: payload.description,
+        body: payload.body,
+        metadata: payload.metadata,
       });
 
-      // Register the new page so retrieval + embeddings can see it. When a
-      // background runtime is available, the rebuild + embeddings run off the
-      // tool's critical path; otherwise fall back to a synchronous rebuild.
-      if (runtime) {
-        scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
-      } else {
-        rebuildMetadataLight(paths);
-      }
+      if (runtime) scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
 
       return {
-        content: [{ type: "text", text: `✅ Created ${type} page: \`${pagePath}\`` }],
-        details: { path: pagePath, created: true } as Record<string, unknown>,
+        content: [
+          {
+            type: "text",
+            text: `✅ ${existed ? "Updated" : "Created"} ${type} Concept: \`${pagePath}\``,
+          },
+        ],
+        details: {
+          path: pagePath,
+          created: !existed,
+          revision: result.revision,
+          effect: result.effect,
+        } as Record<string, unknown>,
       };
     },
   });
 }
+
+function canonicalConceptLink(fromPath: string, targetId: string): string {
+  const targetPath = targetId.endsWith(".md") ? targetId : `${targetId}.md`;
+  const destination = posix.relative(posix.dirname(fromPath), targetPath);
+  const encoded = destination.split("/").map(encodeURIComponent).join("/");
+  const label = posix.basename(targetId).replaceAll("-", " ");
+  return `[${label}](${encoded})`;
+}
+
+function buildNativePagePayload(
+  type: GeneralPageType,
+  title: string,
+  date: string,
+  customContent?: string,
+): { description: string; body: string; metadata: Record<string, YamlValue> } {
+  const template = buildPageTemplate(type, title, date, customContent);
+  const match = template.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  const parsed = match ? (parse(match[1]) as Record<string, unknown>) : {};
+  const body = (match ? match[2] : template).trimStart();
+  const metadata: Record<string, YamlValue> = {};
+  for (const [key, value] of Object.entries(parsed ?? {})) {
+    if (new Set(["type", "title", "description", "timestamp", "created", "updated"]).has(key)) {
+      continue;
+    }
+    metadata[key] = value as YamlValue;
+  }
+  const prose = body
+    .replace(/^#.*$/gm, "")
+    .replace(/\[([^\]]+)\]\([^\)]+\)|\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g, "$1$2")
+    .replace(/\[[^\]]*\]|[*_`>#-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const description = customContent
+    ? (prose.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim() || prose).slice(0, 240)
+    : `A newly created ${type} page titled “${title}”; detailed knowledge has not yet been added.`;
+  if (!description)
+    throw new Error("Page content must provide enough knowledge for a description.");
+  return { description, body, metadata };
+}
+
+type GeneralPageType =
+  | "entity"
+  | "concept"
+  | "synthesis"
+  | "analysis"
+  | "requirement"
+  | "skill"
+  | "case";
 
 function buildPageTemplate(
   type: string,
@@ -603,7 +672,7 @@ function buildPageTemplate(
 ): string {
   if (customContent) return customContent;
 
-  const base = `---\ntype: ${type}\ncreated: ${date}\nupdated: ${date}\nsources: []\n---\n\n# ${title}\n\n[Description to be filled]\n\n## Links\n\n- [[related-page]]\n`;
+  const base = `---\ntype: ${type}\ncreated: ${date}\nupdated: ${date}\nsources: []\n---\n\n# ${title}\n\n[Description to be filled]\n\n## Links\n\n- [Related Concept](../concepts/related-concept.md)\n`;
 
   if (type === "entity") {
     return base
@@ -660,11 +729,9 @@ function buildPageTemplate(
       "",
       "- [Known failure mode or caveat]",
       "",
-      "## Distilled From",
+      "## Provenance",
       "",
-      "_Trajectories this skill was generalized from._",
-      "",
-      "- [[trajectories/TRJ-...]]",
+      "_Add disclosure-safe provenance when this draft is distilled from private trajectory evidence._",
       "",
     ].join("\n");
   }
@@ -696,9 +763,9 @@ function buildPageTemplate(
       "",
       "[Result, and anything worth reusing or avoiding next time]",
       "",
-      "## Trajectory",
+      "## Provenance",
       "",
-      "- [[trajectories/TRJ-...]] — captured tool-call run",
+      "_Add disclosure-safe provenance for any private trajectory evidence used to write this case._",
       "",
     ].join("\n");
   }
@@ -735,7 +802,7 @@ function buildPageTemplate(
       "",
       "## Sources",
       "",
-      "- [[sources/SRC-...]] — original concept capture",
+      "- [Source Concept](../sources/source-concept.md) — original concept capture",
       "",
     ].join("\n");
   }
@@ -757,11 +824,7 @@ export function registerWikiSearch(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const paths = getPaths(ctx.cwd);
-      const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-        version: "1.0",
-        last_updated: "",
-        pages: {},
-      });
+      const registry = currentRegistry(paths);
       const q = params.query.toLowerCase();
 
       const matches = Object.entries(registry.pages)
@@ -790,7 +853,7 @@ export function registerWikiSearch(pi: ExtensionAPI): void {
             text: [
               `🔍 **${matches.length} result(s)** for "${params.query}":`,
               "",
-              ...matches.map((m) => `- [[${m.id}]] — *${m.type}* — ${m.title}`),
+              ...matches.map((m) => `- [${m.title}](${m.id}.md) — *${m.type}*`),
             ].join("\n"),
           },
         ],
@@ -845,50 +908,43 @@ export function registerWikiLint(pi: ExtensionAPI, runtime?: Runtime): void {
  * Run the wiki health scan (issue #77 extracted it from the tool body so it can
  * run off-thread via `dispatchReported`). Returns the human-readable summary.
  */
-function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
-  const pages = findWikiPages(paths.wiki);
-  const registry = buildRegistry(paths);
-  buildBacklinks(paths, registry); // ensures backlinks.json is current
+async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string> {
+  // Lint the same parsed Concept boundary used by registry, backlinks, and recall.
+  // Reserved Documents, assets, private packets, code, and external links never enter this set.
+  const bundle = await readKnowledgeBundle(paths.wiki);
+  const concepts = bundle.concepts.filter(({ metadata }) => metadata !== null);
 
   const findings: string[] = [];
   let orphans = 0;
   let missingPages = 0;
   let contradictions = 0;
   const gaps: Array<{ topic: string; mentionedBy: string[] }> = [];
+  const inbound = new Map(concepts.map(({ id }) => [id, 0]));
+  for (const relationship of bundle.relationships) {
+    if (inbound.has(relationship.target)) {
+      inbound.set(relationship.target, (inbound.get(relationship.target) ?? 0) + 1);
+    }
+  }
 
-  const allPageIds = new Set(pages.map((p) => p.relative));
-  const linkCounts: Record<string, number> = {};
-
-  for (const page of pages) {
-    const links = extractWikilinks(page.content);
-    for (const link of links) {
-      if (!allPageIds.has(link)) {
-        missingPages++;
-        findings.push(`Missing page: [[${link}]] (in [[${page.relative}]])`);
-        const existing = gaps.find((g) => g.topic === link);
-        if (existing) {
-          if (!existing.mentionedBy.includes(page.relative))
-            existing.mentionedBy.push(page.relative);
-        } else {
-          gaps.push({ topic: link, mentionedBy: [page.relative] });
-        }
+  for (const concept of concepts) {
+    for (const link of concept.links.filter(({ classification }) => classification === "broken")) {
+      const topic = link.normalizedTarget ?? link.originalDestination;
+      missingPages++;
+      findings.push(`Missing Concept link: ${link.originalDestination} (in ${concept.path})`);
+      const existing = gaps.find((gap) => gap.topic === topic);
+      if (existing) {
+        if (!existing.mentionedBy.includes(concept.id)) existing.mentionedBy.push(concept.id);
       } else {
-        linkCounts[link] = (linkCounts[link] || 0) + 1;
+        gaps.push({ topic, mentionedBy: [concept.id] });
       }
     }
-  }
-
-  for (const page of pages) {
-    if (!linkCounts[page.relative] || linkCounts[page.relative] === 0) {
+    if ((inbound.get(concept.id) ?? 0) === 0) {
       orphans++;
-      findings.push(`Orphan: [[${page.relative}]] has no inbound links`);
+      findings.push(`Orphan: ${concept.path} has no inbound Concept Relationship`);
     }
-  }
-
-  for (const page of pages) {
-    if (page.content.includes("⚠️ **Contradiction")) {
+    if (concept.body.includes("⚠️ **Contradiction")) {
       contradictions++;
-      findings.push(`Contradiction flagged in [[${page.relative}]]`);
+      findings.push(`Contradiction flagged in ${concept.path}`);
     }
   }
 
@@ -899,20 +955,20 @@ function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
         const folder = gap.topic.includes("/") ? gap.topic.split("/")[0] : "concepts";
         const name = gap.topic.includes("/") ? gap.topic.split("/").pop()! : gap.topic;
         const pagePath = join(paths.wiki, folder, `${name}.md`);
-        mkdirSync(join(paths.wiki, folder), { recursive: true });
-        try {
-          // Atomic create-if-absent: the `wx` flag fails with EEXIST instead of
-          // overwriting, avoiding the existsSync→write TOCTOU race (CodeQL).
-          writeFileSync(
-            pagePath,
-            `---\ntype: concept\ncreated: ${fmtDate()}\nupdated: ${fmtDate()}\nsources: []\nstatus: stub\n---\n\n# ${name.replace(/-/g, " ")}\n\n_Stub auto-created by lint. Expand with content from: ${gap.mentionedBy.map((r) => `[[${r}]]`).join(", ")}_\n`,
-            { encoding: "utf-8", flag: "wx" },
-          );
-          fixesApplied++;
-        } catch (err) {
-          // Page already exists — nothing to fix. Re-throw anything else.
-          if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-        }
+        if (existsSync(pagePath)) continue;
+        const title = name.replace(/-/g, " ");
+        await executePiWriteOperation(paths.root, {
+          kind: "write-concept",
+          mutationId: `lint-stub-${folder}-${name}-${fmtDate()}`,
+          expectedRevision: await readBundleRevision(paths.root),
+          path: `${folder}/${name}.md`,
+          type: "concept",
+          title,
+          description: `A knowledge gap mentioned by ${gap.mentionedBy.length} existing Concepts; substantive detail is not yet recorded.`,
+          body: `## Knowledge gap\n\nThis topic was mentioned by ${gap.mentionedBy.map((id) => canonicalConceptLink(`${folder}/${name}.md`, id)).join(", ")} but still needs substantive knowledge.\n`,
+          metadata: { status: "stub", mentioned_by: gap.mentionedBy },
+        });
+        fixesApplied++;
       }
     }
   }
@@ -927,7 +983,7 @@ function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
     `Generated: ${fmtDate()}`,
     "",
     "## Summary",
-    `- Total pages: ${pages.length}`,
+    `- Total pages: ${concepts.length}`,
     `- Orphans: ${orphans}`,
     `- Missing pages: ${missingPages}`,
     `- Contradictions: ${contradictions}`,
@@ -942,20 +998,10 @@ function runWikiLint(paths: VaultPaths, autoFix: boolean): string {
   mkdirSync(paths.outputs, { recursive: true });
   writeFileSync(reportPath, `${reportLines.join("\n")}\n`, "utf-8");
 
-  appendEvent(paths, {
-    kind: "lint",
-    orphans,
-    missing_pages: missingPages,
-    contradictions,
-    auto_fix: autoFix,
-  });
-
-  rebuildMetadataLight(paths);
-
   return [
     "🧹 **LLM Wiki lint complete**",
     "",
-    `- Pages: ${pages.length}`,
+    `- Pages: ${concepts.length}`,
     `- Orphans: ${orphans}`,
     `- Missing: ${missingPages}`,
     `- Contradictions: ${contradictions}`,
@@ -989,12 +1035,9 @@ export function registerWikiStatus(pi: ExtensionAPI): void {
         };
       }
 
-      const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-        version: "1.0",
-        last_updated: "",
-        pages: {},
-      });
-      const backlinks = readJson<Record<string, string[]>>(join(paths.meta, "backlinks.json"), {});
+      const freshProjection = readFreshPrivateProjectionSync(paths);
+      const registry = currentRegistry(paths);
+      const backlinks = freshProjection?.backlinks ?? {};
       const config = readJson<Record<string, unknown>>(join(paths.dotWiki, "config.json"), {});
 
       const byType: Record<string, number> = {};
@@ -1051,9 +1094,9 @@ export function registerWikiRebuildMeta(pi: ExtensionAPI, runtime?: Runtime): vo
   pi.registerTool({
     name: "wiki_rebuild_meta",
     label: "Wiki Rebuild Meta",
-    description: "Force a full metadata rebuild (registry, backlinks, index, log).",
-    promptSnippet: "Rebuild all wiki metadata",
-    promptGuidelines: ["Use wiki_rebuild_meta if metadata seems out of sync."],
+    description: "Publish a complete revision-bound Private Projection generation.",
+    promptSnippet: "Rebuild wiki Private Projections",
+    promptGuidelines: ["Use wiki_rebuild_meta if a Private Projection is missing or stale."],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const paths = getPaths(ctx.cwd);
@@ -1071,16 +1114,12 @@ export function registerWikiRebuildMeta(pi: ExtensionAPI, runtime?: Runtime): vo
       return dispatchReported(runtime, ctx as ToolCtx, {
         label: `rebuild_meta:${paths.root}`,
         started:
-          "\u{1F9E0} LLM Wiki: metadata rebuild started in the background — the result will be reported when it completes.",
+          "\u{1F9E0} LLM Wiki: Private Projection rebuild started in the background — the result will be reported when it completes.",
         work: async () => {
-          rebuildMetadata(paths);
-          appendEvent(paths, { kind: "rebuild_meta" });
-          const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-            version: "1.0",
-            last_updated: "",
-            pages: {},
-          });
-          return `✅ LLM Wiki: metadata rebuilt — ${Object.keys(registry.pages).length} pages indexed.`;
+          const result = await rebuildPrivateProjections(paths);
+          const registry = readFreshPrivateProjectionSync(paths)?.registry;
+          const effect = result.status === "no-op" ? "no-op" : result.effect;
+          return `✅ LLM Wiki: Private Projection rebuilt — ${Object.keys(registry?.pages ?? {}).length} Concepts indexed (${effect}).`;
         },
       });
     },
@@ -1139,15 +1178,11 @@ export function registerWikiReindexEmbeddings(pi: ExtensionAPI, runtime?: Runtim
         started: `\u{1F9E0} LLM Wiki: embedding reindex started in the background (${embedder.model}) — stats will be reported when it completes.`,
         details: { enabled: true, model: embedder.model },
         work: async () => {
-          const stats = await reindexEmbeddings(paths, embedder, { force: params.force === true });
-          appendEvent(paths, {
-            kind: "reindex_embeddings",
-            embedded: stats.embedded,
-            skipped: stats.skipped,
-            pruned: stats.pruned,
-            model: embedder.model,
+          const result = await rebuildPrivateProjections(paths, {
+            embedder,
+            force: params.force === true,
           });
-          return `✅ LLM Wiki: embeddings reindexed (${embedder.model}) — ${stats.embedded} embedded, ${stats.skipped} fresh, ${stats.pruned} pruned.`;
+          return `✅ LLM Wiki: embeddings reindexed (${embedder.model}) — ${result.status} (${result.effect}).`;
         },
       });
     },

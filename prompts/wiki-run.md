@@ -16,7 +16,7 @@ $ARGUMENTS
 ## Steps
 
 1. **Discover:** Use web search to find new sources on the wiki's topic, then capture each with `wiki_capture_source(url=<url>)` (max 5-10).
-2. **Ingest:** Call `wiki_ingest(batch_size=3)` and process returned sources — read extracted.md, update source pages, create entity/concept pages, add cross-references.
+2. **Ingest:** Call `wiki_ingest(batch_size=3)` so controlled background synthesis updates Source Concepts and related Concepts atomically. Never edit canonical files directly.
 3. **Lint:** Call `wiki_lint(auto_fix=false)` to run a health check.
 4. If critical gaps found → optionally run one more discover+ingest cycle.
 5. Save summary to `.llm-wiki/outputs/run-YYYY-MM-DD.md` using the `write` tool.

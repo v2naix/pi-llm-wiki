@@ -79,7 +79,9 @@
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/server": "^2.0.0-alpha.2",
+    "mdast-util-from-markdown": "^2.0.3",
     "node-html-markdown": "^2.0.0",
+    "yaml": "^2.9.0",
     "zod": "^4.0"
   },
   "devDependencies": {

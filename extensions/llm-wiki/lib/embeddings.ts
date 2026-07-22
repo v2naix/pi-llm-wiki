@@ -61,6 +61,9 @@ export interface EmbeddingEntry {
 
 export interface EmbeddingStore {
   version: string;
+  /** Canonical source identity for generation-bound stores. */
+  sourceContentIdentity?: string;
+  sourceBundleRevision?: number | null;
   /** Keyed by folder-qualified page id (e.g. "concepts/rag"). */
   entries: Record<string, EmbeddingEntry>;
 }

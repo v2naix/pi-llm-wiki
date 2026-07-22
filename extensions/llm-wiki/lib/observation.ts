@@ -1,11 +1,12 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
+import { captureObservationConcept, resolveProducerRevision } from "./concept-producers.js";
 import { scheduleReindex } from "./indexing.js";
-import { appendEvent, rebuildMetadataLight } from "./metadata.js";
 import type { Runtime } from "./runtime.js";
-import { type VaultPaths, fmtDate, resolveVaultPaths } from "./utils.js";
+import { type VaultPaths, resolveVaultPaths } from "./utils.js";
 
 // ─── Types ─────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ export interface ObservationInput {
 export interface ObservationResult {
   slug: string;
   pagePath: string;
+  revision: number;
 }
 
 // ─── Save Observation ──────────────────────────────────
@@ -43,84 +45,38 @@ const RELEVANCE_EMOJIS: Record<string, string> = {
  * wiki_observe records timestamped observations during a session
  * that can later be distilled into durable wiki pages.
  *
- * Observations are stored in wiki/sources/ with type: source and
- * status: observation. They are searchable via wiki_recail.
+ * Observations are stored as reader-visible Observation Concepts. They are
+ * searchable via wiki_recall without pretending to own raw Source evidence.
  */
-export function saveObservation(
+export async function saveObservation(
   paths: VaultPaths,
   input: ObservationInput,
-  opts?: { rebuild?: boolean },
-): ObservationResult {
-  const today = fmtDate();
-  const timestamp = new Date().toISOString();
-
-  // Generate a slug from title
-  const slugBase = input.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60);
-  const slug = `obs-${today}-${slugBase}`;
-
-  // Write to wiki/sources/{slug}.md
-  const sourcePageDir = join(paths.wiki, "sources");
-  mkdirSync(sourcePageDir, { recursive: true });
-  const pagePath = join(sourcePageDir, `${slug}.md`);
-
-  const relevanceEmoji = RELEVANCE_EMOJIS[input.relevance] ?? "📝";
-  const tags = input.tags ?? "";
-  const sourceContext = input.source_context ?? "";
-
-  const pageContent = [
-    "---",
-    "type: source",
-    `title: "Observation: ${input.title}"`,
-    `slug: ${slug}`,
-    "status: observation",
-    `created: ${today}`,
-    `updated: ${today}`,
-    `relevance: ${input.relevance}`,
-    `observed_at: ${timestamp}`,
-    tags
-      ? `tags: [${tags
-          .split(/\s+/)
-          .filter(Boolean)
-          .map((t) => `"${t}"`)
-          .join(", ")}]`
-      : "",
-    sourceContext ? `source_context: "${sourceContext}"` : "",
-    "---",
-    "",
-    `# ${relevanceEmoji} Observation: ${input.title}`,
-    "",
-    input.content,
-    "",
-    `*Relevance: ${input.relevance}*`,
-    sourceContext ? `\n*Context: ${sourceContext}*` : "",
-    tags ? `\n*Tags: ${tags}*` : "",
-    "",
-    "---",
-    `*Observed: ${timestamp}*`,
-    "",
-  ]
-    .filter((l) => l !== "")
-    .join("\n");
-  writeFileSync(pagePath, pageContent, "utf-8");
-
-  // Log event
-  appendEvent(paths, {
-    kind: "observe",
-    slug,
+  opts?: {
+    mutationId?: string;
+    expectedRevision?: number;
+    committedAt?: string;
+  },
+): Promise<ObservationResult> {
+  const mutationId = opts?.mutationId ?? `observe-${randomUUID()}`;
+  const expectedRevision =
+    opts?.expectedRevision ??
+    (await resolveProducerRevision(paths.root, mutationId, opts?.committedAt));
+  const result = await captureObservationConcept({
+    vaultRoot: paths.root,
+    mutationId,
+    expectedRevision,
+    committedAt: opts?.committedAt,
     title: input.title,
+    content: input.content,
     relevance: input.relevance,
+    tags: input.tags?.split(/\s+/).filter(Boolean),
+    sourceContext: input.source_context,
   });
-
-  // Rebuild metadata so the observation is immediately searchable. Callers that
-  // background this (the wiki_observe tool) pass { rebuild: false } and schedule
-  // a non-blocking reindex instead.
-  if (opts?.rebuild !== false) rebuildMetadataLight(paths);
-
-  return { slug, pagePath };
+  return {
+    slug: result.slug,
+    pagePath: join(paths.wiki, result.conceptPath),
+    revision: result.revision,
+  };
 }
 
 // ─── Shared Reminder State ────────────────────────────
@@ -226,7 +182,7 @@ export function registerWikiObserve(
         };
       }
 
-      const result = saveObservation(
+      const result = await saveObservation(
         paths,
         {
           title: params.title,
@@ -235,10 +191,7 @@ export function registerWikiObserve(
           tags: params.tags,
           source_context: params.source_context,
         },
-        // When a background runtime is available, write the page synchronously
-        // but defer the O(pages) metadata rebuild + embeddings off the tool's
-        // critical path. Without a runtime, fall back to the inline rebuild.
-        { rebuild: !runtime },
+        { mutationId: _toolCallId },
       );
       if (runtime) {
         const launchCtx = { hasUI: ctx.hasUI, ui: ctx.ui };

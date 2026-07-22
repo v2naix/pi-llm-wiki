@@ -7,7 +7,7 @@
  * Covers every class of path the hook must block or allow:
  *   BLOCK  .llm-wiki/raw/**          (immutable source artifacts)
  *   BLOCK  .llm-wiki/meta/**         (auto-generated metadata)
- *   ALLOW  .llm-wiki/wiki/**         (editable knowledge pages)
+ *   BLOCK  .llm-wiki/wiki/**         (controlled writes use Bundle Mutations)
  *   ALLOW  anything outside the vault
  */
 
@@ -36,7 +36,7 @@ function makePaths() {
   return p;
 }
 
-describe("E2E — Guardrails: isProtectedPath blocks raw/** and meta/**", () => {
+describe("E2E — Guardrails: direct tool writes cannot bypass controlled boundaries", () => {
   it("blocks a write to raw/sources/SRC-*/extracted.md", () => {
     const paths = makePaths();
     const target = join(paths.rawSources, "SRC-2026-06-03-001", "extracted.md");
@@ -109,7 +109,7 @@ describe("E2E — Guardrails: isProtectedPath blocks raw/** and meta/**", () => 
     console.log("✅ meta/events.jsonl write blocked\n");
   });
 
-  it("ALLOWS a write to wiki/concepts/retrieval-augmented-generation.md", () => {
+  it("BLOCKS a direct write to a Concept", () => {
     const paths = makePaths();
     const target = join(paths.wiki, "concepts", "retrieval-augmented-generation.md");
 
@@ -117,28 +117,31 @@ describe("E2E — Guardrails: isProtectedPath blocks raw/** and meta/**", () => 
 
     console.log(`\nwiki/concepts/*.md → protected=${result.protected}`);
 
-    expect(result.protected).toBe(false);
-    console.log("✅ wiki/concepts write allowed\n");
+    expect(result.protected).toBe(true);
+    expect(result.reason).toContain("Bundle Mutation");
+    console.log("✅ direct Concept write blocked\n");
   });
 
-  it("ALLOWS a write to wiki/sources/SRC-2026-06-03-001.md (source page, not raw packet)", () => {
+  it("BLOCKS a direct write to a Source Concept", () => {
     const paths = makePaths();
     const target = join(paths.wiki, "sources", "SRC-2026-06-03-001.md");
 
     const result = isProtectedPath(target, paths);
 
-    expect(result.protected).toBe(false);
-    console.log("✅ wiki/sources page write allowed\n");
+    expect(result.protected).toBe(true);
+    expect(result.reason).toContain("Bundle Mutation");
+    console.log("✅ direct Source Concept write blocked\n");
   });
 
-  it("ALLOWS a write to wiki/entities/openai.md", () => {
+  it("BLOCKS a direct edit to a generated Reserved Document", () => {
     const paths = makePaths();
-    const target = join(paths.wiki, "entities", "openai.md");
+    const target = join(paths.wiki, "index.md");
 
     const result = isProtectedPath(target, paths);
 
-    expect(result.protected).toBe(false);
-    console.log("✅ wiki/entities write allowed\n");
+    expect(result.protected).toBe(true);
+    expect(result.reason).toContain("Reserved Documents");
+    console.log("✅ direct Reserved Document edit blocked\n");
   });
 
   it("ALLOWS a write to a file outside the vault entirely", () => {

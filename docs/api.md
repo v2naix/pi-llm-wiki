@@ -2,6 +2,8 @@
 
 All tools registered by the extension. Parameters marked `?` are optional.
 
+Pi Extension and MCP write methods are Controlled Write Adapters. Equivalent operations use one application-layer operation and Bundle Mutation implementation. Results classify `effect` as `"canonical"`, `"private-only"`, or `"no-op"`, return the Bundle Revision and Mutation Identity, and include independent pinned OKF, Native OKF Contract, and named reference-operation validation results. Private-only projection or administrative operations never claim a canonical commit.
+
 13 tools are always registered. The 3 agent-trajectory tools
 (`wiki_capture_trajectory`, `wiki_distill_skills`, `wiki_recall_skill`) are **opt-in,
 off by default** (issue #80) — they are only registered when `llm-wiki.trajectories`
@@ -11,8 +13,7 @@ is `true`; enable with `/wiki-trajectories on`.
 
 ## wiki_bootstrap
 
-Initialize a new LLM Wiki vault with the 4-layer architecture. Creates config, templates, schema,
-and metadata scaffolding.
+Initialize a Canonical Knowledge Bundle and its Private Vault Layer. Creates configuration, templates, operating rules, and initial Reserved Documents.
 
 **Parameters**
 
@@ -25,7 +26,7 @@ and metadata scaffolding.
 **Returns**
 
 ```
-details: { root: string, mode: string, topic: string }
+details: { root: string, mode: string, topic: string, revision: number, effect: "canonical" | "no-op" }
 ```
 
 Confirmation text includes the vault path, directory layout, and a prompt to capture the first source.
@@ -34,8 +35,7 @@ Confirmation text includes the vault path, directory layout, and a prompt to cap
 
 ## wiki_capture_source
 
-Capture a URL, local file, or pasted text into an immutable source packet and skeleton source page.
-Provide exactly one of `url`, `file_path`, or `text`.
+Capture a URL, local file, or pasted text through the controlled Source Capture Operation. It first establishes one complete immutable Raw Source Packet in the Private Vault Layer, then commits an honest reader-visible Source Concept. Provide exactly one of `url`, `file_path`, or `text`.
 
 **Parameters**
 
@@ -50,10 +50,12 @@ Provide exactly one of `url`, `file_path`, or `text`.
 
 ```
 details: {
-  sourceId: string,          // e.g. "SRC-2026-06-03-001"
-  packetPath: string,        // path to raw/sources/SRC-.../
-  sourcePagePath: string,    // path to wiki/sources/SRC-....md (skeleton)
-  extractedPreview: string   // first 300 chars of extracted content
+  rawSourceId: string,       // stable opaque provenance identity; not a path
+  conceptPath: string,       // bundle-relative Source Concept path
+  curationState: "captured" | "blocked",
+  revision: number,
+  effect: "canonical" | "no-op",
+  validation: ValidationReport
 }
 ```
 
@@ -63,9 +65,7 @@ Errors with `isError: true` if no vault exists or no source input is provided.
 
 ## wiki_ingest
 
-Return a batch of uningested source packets for the LLM to synthesize. Does not write anything
-itself — the model reads the returned extracted content, fills in the skeleton source page,
-and creates entity/concept pages.
+Select captured Source Concepts for synthesis. Background synthesis commits the Source Concept update and related entity/topic Concepts atomically through the shared Bundle Mutation boundary. It never asks the model to edit canonical files or private projection files directly.
 
 **Parameters**
 
@@ -78,7 +78,7 @@ and creates entity/concept pages.
 
 ```
 details: {
-  batch: string[],    // source IDs in this batch, e.g. ["SRC-2026-06-03-001"]
+  batch: string[],    // opaque Raw Source Identifiers
   remaining: number   // sources still waiting after this batch
 }
 ```
@@ -147,8 +147,7 @@ Returns empty `matches: []` with a hint to use `wiki_retro` when the wiki has no
 
 ## wiki_search
 
-Exact keyword search across the generated registry. Faster and simpler than `wiki_recall` — no
-scoring, no PRF, no vault layering. Use for lookups when you already know what you're looking for.
+Exact keyword search across a fresh revision-bound Private Projection. A stale projection is ignored rather than treated as canonical authority. Use this for lookups when you already know what you're looking for.
 
 **Parameters**
 
@@ -170,9 +169,7 @@ details: {
 
 ## wiki_retro
 
-Save an atomic insight from a completed task as a single lightweight markdown file in
-`wiki/sources/`. Does not create a full source packet. Rebuilds metadata immediately so the
-insight is searchable in the same session.
+Save an atomic insight from a completed task as a Retrospective Concept through the shared Bundle Mutation seam. It does not create a Raw Source Packet because it is not a captured external source. The resulting Private Projection is fresh in the same session.
 
 **Parameters**
 
@@ -180,7 +177,7 @@ insight is searchable in the same session.
 |------|------|----------|-------------|
 | `slug` | `string` | ✅ | Unique kebab-case identifier (e.g. `"jwt-revocation-pattern"`). Used as the filename and for lookups. |
 | `title` | `string` | ✅ | Short descriptive title, 60 chars max. Noun phrase, not a sentence. |
-| `body` | `string` | ✅ | Markdown content explaining what was learned. Include `[[wikilinks]]` to related pages. |
+| `body` | `string` | ✅ | Markdown content explaining what was learned. Use standard file-relative Markdown links ending in `.md` for related Concepts. |
 | `category` | `string` | — | Optional grouping label (e.g. `"frontend"`, `"architecture"`, `"devops"`, `"bugfix"`) |
 
 **Returns**
@@ -250,8 +247,7 @@ always require human review.
 
 ## wiki_status
 
-Report wiki health and statistics from the generated registry. Reads pre-built metadata — does not
-scan files directly.
+Report wiki health and statistics from a revision-bound Private Projection. A stale projection is not read as bundle authority.
 
 **Parameters**
 
@@ -277,8 +273,7 @@ Health is `"⚠️ Warning"` when orphan count exceeds 5, `"🔴 Empty"` when th
 
 ## wiki_rebuild_meta
 
-Force a full synchronous rebuild of all generated metadata: `registry.json`, `backlinks.json`,
-`index.md`, `log.md`. Use when metadata appears out of sync with actual wiki files.
+Publish one complete revision-bound Private Projection generation containing the registry, backlinks, embeddings, and private activity views. This operation does not change canonical bytes, Concept Timestamps, or Bundle Revision.
 
 **Parameters**
 
@@ -287,15 +282,14 @@ None.
 **Returns**
 
 ```
-details: { pageCount: number }
+details: { effect: "private-only" | "no-op", pageCount: number }
 ```
 
 ---
 
 ## wiki_log_event
 
-Append a structured event to `meta/events.jsonl` and regenerate `meta/log.md`. Every event is
-timestamped automatically.
+Append a structured private administrative event and regenerate the private activity view. This does not edit the canonical root `log.md` Reserved Document or advance Bundle Revision.
 
 **Parameters**
 

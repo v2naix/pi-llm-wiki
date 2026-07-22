@@ -23,8 +23,8 @@ $ARGUMENTS
    - "Run `/wiki-ingest` after capturing sources to synthesize them into knowledge pages."
 
 **Do NOT manually create directories or files.** The `wiki_bootstrap` tool handles all scaffolding including:
-- `.llm-wiki/raw/sources/` — immutable source packets
-- `.llm-wiki/wiki/` — editable knowledge pages
-- `.llm-wiki/meta/` — auto-generated metadata
+- `.llm-wiki/raw/sources/` — immutable Raw Source Packets in the Private Vault Layer
+- `.llm-wiki/wiki/` — editable Canonical Knowledge Bundle
+- `.llm-wiki/meta/` — revision-bound Private Projections
 - `.llm-wiki/config.json` — vault configuration
 - `.llm-wiki/WIKI_SCHEMA.md` — operating rules

@@ -1,137 +1,66 @@
 # Architecture
 
-## Layered Vault Architecture
+## Native OKF boundaries
 
-pi-llm-wiki supports multiple vault layers that are searched together:
+A vault has two authority layers:
 
-| Layer | Location | Resolution | Searched by recall |
-|-------|----------|------------|-------------------|
-| **Personal** | `~/.llm-wiki/` | Fallback when no project wiki found | ✅ Always |
-| **Project** | `{project}/.llm-wiki/` | Walk up from cwd | ✅ When present |
-
-### Resolution Order
-
-1. Check current directory for `.llm-wiki/` → use as project wiki
-2. Walk up parent directories looking for `.llm-wiki/` → use as project wiki
-3. Check `WIKI_HOME` env var → use as personal wiki
-4. Fall back to `~/.llm-wiki/` → create if doesn't exist
-
-This means a project wiki is always preferred when you're inside a project that has one, but your personal wiki is always available as the fallback.
-
-### Dual-Vault Recall
-
-`wiki_recall` uses `searchWikiLayered()` which:
-1. Searches the **project vault** (if one exists in cwd)
-2. Searches the **personal vault** (`~/.llm-wiki/` or `WIKI_HOME`)
-3. Deduplicates results by page ID (project takes priority on duplicates)
-4. Tags personal results with "📓 personal" label
-5. Merges results: personal first, then project
-
-Results are injected into the context with vault source tags so the model can distinguish between personal and project knowledge.
-
----
-
-## Four-Layer Page Model (within each vault)
-
-```
+```text
 WIKI_ROOT/
-└── .llm-wiki/                 # All wiki content under one dot-dir
-    ├── config.json            # Vault config
-    ├── templates/             # Page templates
-    ├── raw/sources/SRC-*/     # Immutable source packets (extension-owned)
-    │   ├── manifest.json      # Capture metadata
-    │   ├── original/          # Original artifact
-    │   ├── extracted.md       # Normalized markdown
-    │   └── attachments/       # Downloaded images, PDFs
-    ├── raw/trajectories/TRJ-*/ # Immutable agent task packets (extension-owned)
-    │   ├── manifest.json      # Capture metadata (format: trajectory)
-    │   ├── packet.json        # Full tool-call sequence
-    │   └── extracted.md       # README summary
-    ├── wiki/                  # Editable knowledge pages (you + LLM)
-    │   ├── sources/           # One summary per source
-    │   ├── entities/          # People, orgs, tools, products
-    │   ├── concepts/          # Ideas, patterns, frameworks
-    │   ├── syntheses/         # Cross-cutting analyses
-    │   ├── analyses/          # Durable query answers
-    │   ├── cases/             # One specific past task per trajectory
-    │   └── skills/            # Reusable patterns distilled from trajectories
-    ├── meta/                  # Auto-generated (extension-owned)
-    │   ├── registry.json      # Master page catalog
-    │   ├── backlinks.json     # Inbound link map
-    │   ├── index.md           # Human-readable catalog
-    │   ├── log.md             # Activity log
-    │   └── events.jsonl       # Structured event stream
-    ├── outputs/               # Generated artifacts
-    └── .discoveries/          # Discovery tracking
+└── .llm-wiki/                         # Private Vault Layer (not distributed)
+    ├── config.json
+    ├── raw/sources/<opaque-id>/        # immutable Raw Source Packets
+    ├── raw/trajectories/TRJ-*/         # private trajectory evidence
+    ├── meta/                           # rebuildable Private Projections + mutation state
+    ├── outputs/                        # private generated reports
+    └── wiki/                           # Canonical Knowledge Bundle (distribution root)
+        ├── index.md                    # generated root Navigation Index
+        ├── log.md                      # generated root update log
+        ├── sources/*.md                # Source Concepts
+        ├── entities/*.md               # Concepts
+        ├── concepts/*.md               # Concepts
+        └── assets/*                     # opaque Bundle assets
 ```
 
-## Ownership Rules
+`.llm-wiki/wiki/` is the editable, authoritative, distributable OKF bundle. A Bundle Snapshot is only a byte-preserving copy of that directory; there is no transformed export or second bundle authority. Configuration, Raw Source Packets, registries, backlinks, embeddings, recovery data, events, and reports remain in the Private Vault Layer.
 
-| Path      | Owner                    | Rule                     |
-| --------- | ------------------------ | ------------------------ |
-| Path                  | Owner                    | Rule                     |
-| --------------------- | ------------------------ | ------------------------ |
-| `.llm-wiki/raw/**`    | Extension                | Immutable after capture  |
-| `.llm-wiki/wiki/**`   | Model + user             | Editable knowledge pages |
-| `.llm-wiki/meta/**`   | Extension                | Auto-generated           |
-| `.llm-wiki/` | Human + explicit request | Operating rules          |
+## Controlled writes
 
-## Source Packet Format
+Pi Extension and MCP are **Controlled Write Adapters**. Equivalent operations submit one application-layer operation, which applies one shared Bundle Mutation implementation. Every canonical request carries a Mutation Identity and expected Bundle Revision. A successful commit advances the revision exactly once; retries return the original result, stale writes conflict, and no-ops do not claim a commit.
 
-Each captured source becomes a packet:
+Direct Pi `write` or `edit` calls under `.llm-wiki/wiki/` are blocked. Human or third-party editor changes are still observable on disk and must be deliberately admitted with External Reconciliation. Generated Reserved Documents (`index.md` and `log.md` at any depth) are never directly editable Concepts.
 
-```
-.llm-wiki/raw/sources/SRC-YYYY-MM-DD-NNN/
-  manifest.json
-  original/
-  extracted.md
-  attachments/
+After canonical publication, registry, backlink, search, recall, and embedding Private Projections are rebuilt from observable bundle bytes and declare their source Bundle Revision/content identity. They are not canonical write authority.
+
+## Concepts and links
+
+Every controlled Concept stores truthful `type`, `title`, `description`, and UTC `timestamp` fields at write time. Controlled writers emit standard file-relative Markdown links ending in `.md`:
+
+```markdown
+[Transformer](../concepts/transformer.md)
 ```
 
-## Page Types
+Wikilinks are not canonical output. Parsed Markdown links—not raw regexes—define Link Occurrences and Concept Relationships. Private Raw Source Packet or trajectory paths must not appear as Concept links or citations.
 
-- **source** — what this specific source says
-- **entity** — people, orgs, tools, products
-- **concept** — ideas, patterns, frameworks
-- **synthesis** — cross-source theses and tensions
-- **analysis** — durable filed answers from queries
-- **requirement** — atomic requirements with status, priority, and traceability
-- **trajectory** — an immutable captured agent task run (working-memory source)
-- **case** — one specific past task implementation, citing its trajectory
-- **skill** — a reusable pattern distilled from one or more trajectories
+## Source lifecycle
 
-## Agent Working-Memory (Trajectories)
+A Source Capture Operation first establishes one complete immutable Raw Source Packet, then commits one reader-visible Source Concept. The Concept exposes an opaque Raw Source Identifier and disclosure-safe provenance notice, never a private packet path. Its stable Source Curation State is `captured`, `synthesized`, or `blocked`.
 
-The wiki captures not only what the agent *reads* (sources) but what it *does*
-(trajectories). A completed task is just another kind of source, so it flows
-through the same pipeline:
+Grounded ingestion commits the Source Concept update plus related entity/topic Concepts in one Bundle Mutation. Packet creation without Concept publication is retained as private recovery state and resumed under the same Mutation Identity.
 
-```
-raw/trajectories/TRJ-*  →  wiki/skills/*  (+ optional wiki/cases/*)  →  meta/*
-```
+## Validation and support claims
 
-This is **opt-in, off by default** (issue #80): the three tools below are only
-registered when `llm-wiki.trajectories` is enabled (`/wiki-trajectories on`), and
-the `raw/trajectories`, `wiki/skills`, `wiki/cases` directories are created lazily
-on first use — so a vault with the feature off carries no trace of it.
+Native OKF Support targets OKF v0.1 Draft at specification commit `ee67a5ca27044ebe7c38385f5b6cffc2305a9c1a`. Validation reports these independent profiles:
 
-- `wiki_capture_trajectory` writes the immutable packet + a self-contained summary
-  (`extracted.md`), auto-extracting the tool-call sequence from the live session.
-  It does not emit a to-be-fleshed skeleton — capture is a single lightweight call.
-- `wiki_distill_skills` batches undistilled trajectories so the model can
-  generalize them into reusable `skill` pages.
-- `wiki_recall_skill` filters layered recall to `skill`/`case` pages —
-  "have I done something like this before?".
+- pinned OKF Conformance Profile;
+- Native OKF Contract; and
+- each tested reference-tool operation at `knowledge-catalog` revision `d44368c15e38e7c92481c5992e4f9b5b421a801d`: document parse, document write validation, index generation, graph extraction, or viewer navigation.
 
-Trajectory packets live under `raw/**` and are therefore immutable under the
-same guardrail as source packets — no new ownership rule required.
+A warning or failure in one profile does not alter another profile. Unknown declared OKF versions are consumed best-effort with an explicit outside-profile diagnostic. The project does not make an unqualified “Google-compatible” claim.
 
-## Linking Style
+## Vault resolution
 
-- Internal: `[[folder/page-name]]`
-- Citation: `[[sources/SRC-YYYY-MM-DD-NNN]]`
-- Trajectory citation: `[[trajectories/TRJ-YYYY-MM-DD-NNN]]`
+Project vault discovery walks upward from the current directory. When no project vault exists, `WIKI_HOME` or the user home directory selects the personal vault. The vault is resolved before operation side effects begin and remains fixed for that operation.
 
-## Guardrails
+## Out of scope
 
-The extension blocks direct edits to `.llm-wiki/raw/**` and `.llm-wiki/meta/**`. Metadata rebuilds automatically after `.llm-wiki/wiki/**` edits.
+Arbitrary third-party bundle import, legacy-vault migration into Native OKF, transformed exports, hosted services, and compatibility with unpinned future OKF or reference-tool revisions are outside the Native OKF cutover.

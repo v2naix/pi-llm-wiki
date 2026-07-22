@@ -48,7 +48,8 @@ describe("source packet capture", () => {
     expect(manifest.extractor).toBe("htmlToMarkdown");
 
     const sourcePage = readFile(result.sourcePagePath);
-    expect(sourcePage).toContain(`> _Original: [${url}](${url})_`);
+    expect(sourcePage).toContain(`- **Upstream resource:** [${url}](${url})`);
+    expect(sourcePage).toContain("Raw Source Packet remains outside");
   });
 
   it("should write PDF extraction failure message for .pdf URLs when MarkItDown is unavailable", async () => {
@@ -99,23 +100,25 @@ describe("source packet capture", () => {
     }
   });
 
-  it("should render source page without an Original: line for text captures", async () => {
+  it("should render a provenance-safe pending Source Concept for text captures", async () => {
     const paths = makePaths();
-    const result = captureText(paths, "Some text content", "My Note");
+    const result = await captureText(paths, "Some text content", "My Note");
 
     const sourcePage = readFile(result.sourcePagePath);
-    expect(sourcePage).toContain("# My Note");
-    expect(sourcePage).not.toContain("Original:");
-    expect(sourcePage).toContain("_Auto-preview: Some text content_");
+    expect(sourcePage).toContain("title: My Note");
+    expect(sourcePage).toContain("Synthesis is pending");
+    expect(sourcePage).not.toContain("Some text content");
+    expect(sourcePage).not.toContain("raw/sources/");
   });
 
-  it("should truncate auto-preview to 500 characters", async () => {
+  it("keeps long private evidence out of the pending Source Concept", async () => {
     const paths = makePaths();
     const longText = "A".repeat(1000);
-    const result = captureText(paths, longText, "Long Note");
+    const result = await captureText(paths, longText, "Long Note");
 
     const sourcePage = readFile(result.sourcePagePath);
-    expect(sourcePage).toContain(`_Auto-preview: ${"A".repeat(500)}..._`);
+    expect(sourcePage).toContain("title: Long Note");
+    expect(sourcePage).not.toContain("A".repeat(500));
   });
 
   it("should handle local PDF file capture failure message when MarkItDown is unavailable", async () => {
@@ -129,6 +132,16 @@ describe("source packet capture", () => {
     const extracted = readFile(join(result.packetPath, "extracted.md"));
     expect(extracted).not.toContain("%PDF-");
     expect(extracted).toContain("PDF content could not be converted");
+  });
+
+  it("preserves AbortSignal cancellation through the compatibility adapter", async () => {
+    const paths = makePaths();
+    const filePath = join(tmpDir, "cancelled.md");
+    writeFileSync(filePath, "cancelled", "utf-8");
+
+    await expect(
+      captureFile(mockPi() as never, paths, filePath, AbortSignal.abort(new Error("cancelled"))),
+    ).rejects.toThrow("cancelled");
   });
 
   it("should copy local non-PDF file content to extracted.md", async () => {

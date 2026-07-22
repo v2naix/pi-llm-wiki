@@ -11,6 +11,7 @@ import {
   resolveEmbedder,
 } from "./embeddings.js";
 import type { Registry } from "./metadata.js";
+import { privateProjectionFreshSync, readPrivateProjectionSync } from "./private-projections.js";
 import type { Runtime } from "./runtime.js";
 import type { TaskConfig } from "./task-config.js";
 import {
@@ -375,11 +376,17 @@ export function searchWiki(
   minScore = 0,
   semantic?: SemanticContext,
 ): RecallResult[] {
-  const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
-    version: "1.0",
-    last_updated: "",
-    pages: {},
-  });
+  const projection = readPrivateProjectionSync(paths);
+  // A published generation is all-or-nothing: never combine stale registry,
+  // embeddings, or canonical page bytes after the bundle has changed.
+  if (projection && !privateProjectionFreshSync(paths)) return [];
+  const registry =
+    projection?.registry ??
+    readJson<Registry>(join(paths.meta, "registry.json"), {
+      version: "1.0",
+      last_updated: "",
+      pages: {},
+    });
 
   const terms = queryTerms(query);
   if (terms.length === 0) return [];
@@ -387,7 +394,7 @@ export function searchWiki(
   // Read this vault's precomputed embedding sidecar (synchronous, offline).
   // Missing/empty sidecar => no semantic signal => pure lexical, by construction.
   const embeddingStore: EmbeddingStore | undefined = semantic
-    ? readEmbeddingStore(paths)
+    ? (projection?.embeddings ?? readEmbeddingStore(paths))
     : undefined;
 
   const scored: Scored[] = [];
@@ -612,6 +619,12 @@ export function __clearQueryEmbeddingCache(): void {
 
 /** True if a vault has at least one stored embedding vector. */
 function storeHasEntries(paths: VaultPaths): boolean {
+  const projection = readPrivateProjectionSync(paths);
+  if (projection) {
+    return privateProjectionFreshSync(paths)
+      ? Object.keys(projection.embeddings.entries).length > 0
+      : false;
+  }
   return Object.keys(readEmbeddingStore(paths).entries).length > 0;
 }
 
@@ -700,6 +713,10 @@ const LINKS_SNIPPET_MAX = 80;
 
 /** Count the registered pages of a single vault (O(1), no page-body I/O). */
 function registryPageCount(paths: VaultPaths): number {
+  const projection = readPrivateProjectionSync(paths);
+  if (projection) {
+    return privateProjectionFreshSync(paths) ? Object.keys(projection.registry.pages).length : 0;
+  }
   const registry = readJson<Registry>(join(paths.meta, "registry.json"), {
     version: "1.0",
     last_updated: "",

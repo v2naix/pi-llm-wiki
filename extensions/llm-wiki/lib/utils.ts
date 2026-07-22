@@ -401,6 +401,7 @@ export function isProtectedPath(
 ): { protected: boolean; reason?: string } {
   const rawPath = resolve(paths.raw);
   const metaPath = resolve(paths.meta);
+  const wikiPath = resolve(paths.wiki);
   const norm = resolve(absPath);
 
   if (norm.startsWith(`${rawPath}/`) || norm === rawPath) {
@@ -413,6 +414,16 @@ export function isProtectedPath(
     return {
       protected: true,
       reason: "Metadata is auto-generated. Use wiki_rebuild_meta or wiki_log_event instead.",
+    };
+  }
+  if (norm.startsWith(`${wikiPath}/`) || norm === wikiPath) {
+    const name = norm.split("/").at(-1);
+    return {
+      protected: true,
+      reason:
+        name === "index.md" || name === "log.md"
+          ? "Reserved Documents are generated postconditions; use a Bundle Mutation or External Reconciliation."
+          : "Canonical writes must use a controlled operation and Bundle Mutation; direct tool writes are blocked.",
     };
   }
 

@@ -1,14 +1,12 @@
 ---
 type: analysis
-topic: ""
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
+title: Analysis Title
+description: A durable answer derived from the Canonical Knowledge Bundle.
+timestamp: "YYYY-MM-DDTHH:MM:SSZ"
 sources_count: 0
 ---
 
 # Analysis Title
-
-> _Durable answer derived from wiki content._
 
 ## Question
 
@@ -16,7 +14,7 @@ sources_count: 0
 
 ## Answer
 
-[Synthesized answer with [[wikilink]] citations to specific pages.]
+[Synthesized answer with standard Markdown citations to specific Concepts.]
 
 ## Key Insights
 
@@ -26,10 +24,10 @@ sources_count: 0
 
 ## Sources Used
 
-- [[source-1]]
-- [[source-2]]
+- [Source one](../sources/source-1.md)
+- [Source two](../sources/source-2.md)
 
-## Related Pages
+## Related Concepts
 
-- [[concept-1]]
-- [[entity-1]]
+- [Concept one](../concepts/concept-1.md)
+- [Entity one](../entities/entity-1.md)

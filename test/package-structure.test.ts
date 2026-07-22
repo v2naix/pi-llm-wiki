@@ -129,10 +129,13 @@ describe("package structure", () => {
     expect(existsSync(sourceExtractorsPath)).toBe(true);
 
     const sourcePacket = readFile(sourcePacketPath);
+    const controlledSource = readFile(
+      join(rootDir, "extensions", "llm-wiki", "lib", "controlled-source.ts"),
+    );
     const sourceExtractors = readFile(sourceExtractorsPath);
-    expect(sourcePacket).toContain("captureSource");
-    expect(sourcePacket).toContain("fileExtractorFor");
-    expect(sourcePacket).toContain("extractUrlContent");
+    expect(sourcePacket).toContain("captureThroughControlledAdapter");
+    expect(controlledSource).toContain("fileExtractorFor");
+    expect(controlledSource).toContain("extractUrlContent");
     expect(sourceExtractors).toContain("WIKI_MARKITDOWN_TIMEOUT_MS");
     expect(sourceExtractors).toContain("DEFAULT_MARKITDOWN_TIMEOUT_MS = 180_000");
     expect(sourceExtractors).toContain("URL_EXTRACTORS");

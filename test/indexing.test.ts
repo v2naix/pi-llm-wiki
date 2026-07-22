@@ -178,7 +178,7 @@ describe("scheduleReindex", () => {
   });
 });
 
-describe("saveObservation rebuild opt-out", () => {
+describe("saveObservation canonical mutation boundary", () => {
   let tmpDir: string;
   let vaultDir: string;
 
@@ -199,27 +199,13 @@ describe("saveObservation rebuild opt-out", () => {
     } catch {}
   });
 
-  it("rebuilds synchronously by default (backward compatible)", () => {
+  it("commits the Concept and Reserved Documents without rebuilding private projections inline", async () => {
     const paths = getVaultPaths(vaultDir);
-    const r = saveObservation(paths, { title: "Sync One", content: "x", relevance: "low" });
+    const r = await saveObservation(paths, { title: "Async One", content: "x", relevance: "low" });
     expect(existsSync(r.pagePath)).toBe(true);
-    // registry reflects the page immediately
-    const key = `sources/${r.slug}`;
-    expect(readRegistry(vaultDir).pages[key]).toBeDefined();
-  });
-
-  it("skips the inline rebuild when { rebuild: false }", () => {
-    const paths = getVaultPaths(vaultDir);
-    const r = saveObservation(
-      paths,
-      { title: "Async One", content: "x", relevance: "low" },
-      { rebuild: false },
-    );
-    // the page file is written synchronously...
-    expect(existsSync(r.pagePath)).toBe(true);
-    // ...but the registry was NOT rebuilt inline
-    const key = `sources/${r.slug}`;
-    expect(readRegistry(vaultDir).pages[key]).toBeUndefined();
+    expect(existsSync(join(paths.wiki, "index.md"))).toBe(true);
+    expect(existsSync(join(paths.wiki, "log.md"))).toBe(true);
+    expect(readRegistry(vaultDir).pages[`observations/${r.slug}`]).toBeUndefined();
   });
 });
 
@@ -259,9 +245,7 @@ describe("wiki_observe tool backgrounds its rebuild", () => {
     expect(captured).toBeDefined();
 
     const ctx = { cwd: vaultDir, hasUI: false };
-    // Kick off the tool but do NOT await it yet: the execute body runs to
-    // completion synchronously (no awaits), so the heavy rebuild must still be
-    // pending in the background at this point.
+    // Kick off the tool but do not await the background projection.
     const pending = captured?.execute(
       "id",
       { title: "Tool Obs", content: "y", relevance: "high" },

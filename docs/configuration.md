@@ -41,16 +41,19 @@ The vault root is resolved in this priority order:
 
 This means when you're in a project with its own `.llm-wiki/`, that project wiki is active. When you're outside any project wiki, your personal `~/.llm-wiki/` takes over automatically.
 
-## Page Frontmatter
+## Native OKF Concept frontmatter
+
+Every controlled Concept stores all four core fields at knowledge-write time:
 
 ```yaml
 ---
-type: entity | concept | source | synthesis | analysis
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-sources: [sources/SRC-YYYY-MM-DD-NNN]
+type: concept
+title: Retrieval-augmented generation
+description: A retrieval pattern that grounds generation in selected knowledge.
+timestamp: "2026-08-08T10:00:00Z"
 ---
 ```
 
-Entity: add `category: person | organization | tool | project | product`
-Concept: add `domain: ai | engineering | business | product | design | personal`
+`timestamp` is the UTC Concept Timestamp of the latest committed Meaningful Knowledge Change—not capture time, source publication time, filesystem mtime, or model runtime. Producer-owned and unknown safe YAML fields are semantically preserved. Source Concepts may additionally carry opaque provenance identifiers and safe resource URIs; private paths are forbidden.
+
+The root Navigation Index declares OKF version `0.1`. The implementation pins the profile to specification commit `ee67a5ca27044ebe7c38385f5b6cffc2305a9c1a`; unknown versions are read best-effort and diagnosed as outside the pinned profile.

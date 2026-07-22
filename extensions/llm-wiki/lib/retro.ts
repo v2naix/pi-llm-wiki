@@ -1,86 +1,73 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { scheduleReindex } from "./indexing.js";
-import { appendEvent, rebuildMetadataLight } from "./metadata.js";
+import { BundleMutationError, readBundleRevision } from "./okf-mutation.js";
+import { executePiWriteOperation } from "./pi-write-adapter.js";
 import type { Runtime } from "./runtime.js";
-import { type VaultPaths, fmtDate, resolveVaultPaths } from "./utils.js";
+import { type VaultPaths, resolveVaultPaths } from "./utils.js";
 
 // ─── Public API ────────────────────────────────────────
 
 export interface RetroResult {
   slug: string;
   sourcePagePath: string;
+  revision: number;
 }
 
 /**
- * Save an atomic insight into the wiki as a single markdown file.
+ * Save an atomic insight as a reader-visible Retrospective Concept.
  *
- * Unlike wiki_capture_source (which creates a full source packet with
- * manifest.json, extracted.md, and attachments), this is a lightweight
- * path for quick knowledge capture — one file, one call.
- *
- * The 4-layer pipeline (raw → source pages → canonical pages → metadata)
- * is still available via wiki_capture_source → wiki_ingest for deep research.
+ * Unlike wiki_capture_source, this lightweight path does not claim ownership
+ * of raw evidence or create a Source Concept.
  */
-export function saveInsight(
+export async function saveInsight(
   paths: VaultPaths,
   slug: string,
   title: string,
   body: string,
   category?: string,
-  opts?: { rebuild?: boolean },
-): RetroResult {
-  const today = fmtDate();
-
-  // Write a single markdown file to wiki/sources/{slug}.md
-  const sourcePageDir = join(paths.wiki, "sources");
-  mkdirSync(sourcePageDir, { recursive: true });
-  const sourcePagePath = join(sourcePageDir, `${slug}.md`);
-
-  const pageContent = [
-    "---",
-    "type: source",
-    `title: "${title}"`,
-    `slug: ${slug}`,
-    "status: insight",
-    `created: ${today}`,
-    `updated: ${today}`,
-    category ? `category: ${category}` : "",
-    "---",
-    "",
-    `# ${title}`,
-    "",
-    body,
-    "",
-    category ? `*Category: ${category}*` : "",
-    "",
-    "---",
-    `*Captured: ${today}*`,
-    "",
-    "## Related",
-    "",
-    "_Add links to related pages._",
-    "",
-  ]
-    .filter((l) => l !== "")
-    .join("\n");
-  writeFileSync(sourcePagePath, pageContent, "utf-8");
-
-  // Log event
-  appendEvent(paths, {
-    kind: "retro",
+  opts?: {
+    mutationId?: string;
+    expectedRevision?: number;
+    committedAt?: string;
+  },
+): Promise<RetroResult> {
+  const mutationId = opts?.mutationId ?? `retro-${randomUUID()}`;
+  let expectedRevision = opts?.expectedRevision;
+  if (expectedRevision === undefined) {
+    try {
+      expectedRevision = await readBundleRevision(paths.root);
+    } catch (error) {
+      if (!(error instanceof BundleMutationError) || error.code !== "bundle-not-initialized") {
+        throw error;
+      }
+      const initialized = await executePiWriteOperation(paths.root, {
+        kind: "initialize",
+        mutationId: `${mutationId}-initialize`,
+        expectedRevision: 0,
+        committedAt: opts?.committedAt,
+      });
+      expectedRevision = initialized.revision;
+    }
+  }
+  const result = await executePiWriteOperation(paths.root, {
+    kind: "retrospective",
+    mutationId,
+    expectedRevision,
+    committedAt: opts?.committedAt,
     slug,
     title,
-    category: category || "uncategorized",
+    insight: body,
+    category,
   });
-
-  // Rebuild metadata so the insight is immediately searchable. The wiki_retro
-  // tool passes { rebuild: false } and schedules a non-blocking reindex instead.
-  if (opts?.rebuild !== false) rebuildMetadataLight(paths);
-
-  return { slug, sourcePagePath };
+  return {
+    slug,
+    sourcePagePath: join(paths.wiki, result.conceptPath!),
+    revision: result.revision,
+  };
 }
 
 // ─── Tool Registration ──────────────────────────────────
@@ -96,7 +83,7 @@ export function registerWikiRetro(pi: ExtensionAPI, runtime?: Runtime): void {
     label: "Wiki Retro",
     description:
       "Save an atomic insight from a completed task into the wiki. " +
-      "Creates a source packet and source page. The insight will be " +
+      "Creates a reader-visible Retrospective Concept. The insight will be " +
       "surfaced automatically by wiki_recall in future sessions.",
     promptSnippet: "Save atomic insights from completed tasks into the wiki",
     promptGuidelines: [
@@ -114,7 +101,7 @@ export function registerWikiRetro(pi: ExtensionAPI, runtime?: Runtime): void {
       }),
       body: Type.String({
         description:
-          "Markdown body with [[wikilinks]] to related wiki pages. Explain what was learned.",
+          "Markdown body explaining what was learned. Use standard Markdown links to related Concepts.",
       }),
       category: Type.Optional(
         Type.String({
@@ -138,9 +125,14 @@ export function registerWikiRetro(pi: ExtensionAPI, runtime?: Runtime): void {
         };
       }
 
-      const result = saveInsight(paths, params.slug, params.title, params.body, params.category, {
-        rebuild: !runtime,
-      });
+      const result = await saveInsight(
+        paths,
+        params.slug,
+        params.title,
+        params.body,
+        params.category,
+        { mutationId: _toolCallId },
+      );
       if (runtime) {
         scheduleReindex(runtime, { hasUI: ctx.hasUI, ui: ctx.ui }, paths);
       }

@@ -7,7 +7,7 @@ topLevelCli: true
 
 # /wiki-discover
 
-Find new source material for the wiki by searching the web and capturing them as source packets.
+Find new source material for the wiki and capture each result through the controlled Source Capture Operation.
 
 ## User Arguments
 
@@ -21,10 +21,10 @@ $ARGUMENTS
    - If `--topic` is specified in `$ARGUMENTS`, focus on that topic
    - Otherwise, search for the wiki's main topic + "latest", "news", "update"
 4. For each promising result (max 5-10):
-   a. Call `wiki_capture_source(url=<url>)` to capture it as an immutable source packet
+   a. Call `wiki_capture_source(url=<url>)` to create an immutable Raw Source Packet and associated Source Concept
    b. Skip ads, listicles, and duplicates — prefer in-depth analysis
-5. Report: "Discovered [N] new sources captured as packets. Run `/wiki-ingest` to synthesize them into knowledge pages."
+5. Report: "Discovered [N] sources. Run `/wiki-ingest` to synthesize their Source Concepts."
 
 **Rules:**
 - Do NOT manually save files to `raw/` — always use `wiki_capture_source`.
-- The extension handles manifest, extraction, and skeleton page creation automatically.
+- The extension handles packet establishment, extraction, and Source Concept creation automatically.

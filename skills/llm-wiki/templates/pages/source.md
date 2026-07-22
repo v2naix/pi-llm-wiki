@@ -1,45 +1,31 @@
 ---
 type: source
-format: article # article | paper | note | video | podcast | slack | email
-raw_path: .llm-wiki/raw/articles/filename.md
-ingested: YYYY-MM-DD
-topics:
-  - topic-name
+title: Source Title
+description: Captured source “Source Title”; synthesis is pending.
+timestamp: "YYYY-MM-DDTHH:MM:SSZ"
+llm_wiki_raw_source_id: opaque-raw-source-identifier
+llm_wiki_source_capture_timestamp: "YYYY-MM-DDTHH:MM:SSZ"
+llm_wiki_source_curation_state: captured
 ---
 
 # Source Title
 
-> _Original: [Link to source](https://...)_
+## Source provenance
 
-## Summary
+This editable Source Concept is a catalog entry and synthesis, not the original evidence.
 
-[2-3 paragraph summary of the source's key content, arguments, and conclusions.]
+- **Curation state:** `captured`
+- **Captured:** YYYY-MM-DDTHH:MM:SSZ
+- **Raw evidence:** The immutable Raw Source Packet remains outside this Canonical Knowledge Bundle.
 
-## Key Takeaways
+## Curation
 
-- [Most important point from this source]
-- [Second important point]
-- [Third important point]
+Synthesis is pending; this entry does not yet summarize the captured evidence.
 
 ## Entities Mentioned
 
-- [[entity-1]]
-- [[entity-2]]
+- [Entity one](../entities/entity-1.md)
 
 ## Concepts Mentioned
 
-- [[concept-1]]
-- [[concept-2]]
-
-## Notable Quotes
-
-> "Important quote from the source" — Attribution
-
-## Connections
-
-- This source relates to [[existing-page]] because...
-- Contrasts with [[other-source]] on the topic of...
-
-## Source
-
-- [.llm-wiki/raw/articles/filename.md](../.llm-wiki/raw/articles/filename.md)
+- [Concept one](../concepts/concept-1.md)

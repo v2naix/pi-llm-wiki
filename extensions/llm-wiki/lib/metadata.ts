@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type VaultPaths,
@@ -69,8 +69,10 @@ export function rebuildMetadata(paths: VaultPaths): void {
 export function buildRegistry(paths: VaultPaths): Registry {
   const pages: Record<string, RegistryEntry> = {};
 
-  // Scan wiki pages
+  // Compatibility builder: only canonical Concepts enter the registry.
   for (const page of findWikiPages(paths.wiki)) {
+    const basename = page.relative.split("/").pop();
+    if (basename === "index" || basename === "log") continue;
     const { frontmatter } = parseFrontmatter(page.content);
     const type = String(frontmatter.type || "page") as RegistryEntry["type"];
     const title = String(frontmatter.title || page.relative.split("/").pop() || "Untitled");
@@ -82,52 +84,6 @@ export function buildRegistry(paths: VaultPaths): Registry {
       updated: String(frontmatter.updated || frontmatter.created || fmtDate()),
       ...frontmatter,
     };
-  }
-
-  // Scan raw source packets
-  if (existsSync(paths.rawSources)) {
-    for (const entry of readdirSync(paths.rawSources)) {
-      const manifestPath = join(paths.rawSources, entry, "manifest.json");
-      if (!existsSync(manifestPath)) continue;
-
-      const manifest = readJson<Record<string, unknown>>(manifestPath, {});
-      const id = String(manifest.id || entry);
-      const sourcePage = `sources/${id}`;
-
-      if (!pages[sourcePage]) {
-        pages[sourcePage] = {
-          type: "source",
-          title: String(manifest.title || id),
-          created: String(manifest.captured || fmtDate()),
-          updated: String(manifest.captured || fmtDate()),
-          ...manifest,
-        };
-      }
-    }
-  }
-
-  // Scan raw trajectory packets (agent working-memory). These are catalogued
-  // under the `trajectories/` namespace so distillation and recall can find
-  // them even before a canonical case/skill page has been written.
-  if (existsSync(paths.rawTrajectories)) {
-    for (const entry of readdirSync(paths.rawTrajectories)) {
-      const manifestPath = join(paths.rawTrajectories, entry, "manifest.json");
-      if (!existsSync(manifestPath)) continue;
-
-      const manifest = readJson<Record<string, unknown>>(manifestPath, {});
-      const id = String(manifest.id || entry);
-      const trajectoryPage = `trajectories/${id}`;
-
-      if (!pages[trajectoryPage]) {
-        pages[trajectoryPage] = {
-          type: "trajectory",
-          title: String(manifest.title || id),
-          created: String(manifest.captured || fmtDate()),
-          updated: String(manifest.captured || fmtDate()),
-          ...manifest,
-        };
-      }
-    }
   }
 
   return {
@@ -148,6 +104,7 @@ export function buildBacklinks(paths: VaultPaths, registry: Registry): Backlinks
 
   // Count inbound links
   for (const page of findWikiPages(paths.wiki)) {
+    if (!registry.pages[page.relative]) continue;
     const links = extractWikilinks(page.content);
     for (const link of links) {
       if (inbound[link] && !inbound[link].includes(page.relative)) {
@@ -178,7 +135,8 @@ export function buildIndexMarkdown(registry: Registry): string {
     const label = `${type.charAt(0).toUpperCase() + type.slice(1)}s`;
     sections.push(`## ${label}\n`);
     for (const { id, entry } of items.sort((a, b) => a.id.localeCompare(b.id))) {
-      sections.push(`- [[${id}]] — ${entry.title} *(created: ${entry.created})*`);
+      const created = typeof entry.created === "string" ? ` *(created: ${entry.created})*` : "";
+      sections.push(`- [[${id}]] — ${entry.title}${created}`);
     }
     sections.push("");
   }

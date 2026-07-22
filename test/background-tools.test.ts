@@ -52,7 +52,7 @@ describe("wiki_rebuild_meta background + report (issue #77)", () => {
     );
     writeFileSync(
       join(paths.wiki, "concepts", "alpha.md"),
-      "---\ntype: concept\n---\n\n# Alpha\n\nSome content.\n",
+      "---\ntype: concept\ntitle: Alpha\ndescription: Test Concept\ntimestamp: 2026-07-22T10:00:00Z\n---\n\n# Alpha\n\nSome content.\n",
     );
   });
   afterEach(() => rmSync(tmpDir, { recursive: true, force: true }));
@@ -62,11 +62,14 @@ describe("wiki_rebuild_meta background + report (issue #77)", () => {
     const reported: string[] = [];
     runtime.report = (s: string) => reported.push(s);
     const launched: string[] = [];
-    // Run work synchronously inline so we can assert the report deterministically.
-    runtime.launchReported = async (_ctx, label, work) => {
+    let completion: Promise<void> | undefined;
+    runtime.launchReported = (_ctx, label, work) => {
       launched.push(label);
-      const summary = await work();
-      if (summary) runtime.report(summary);
+      completion = (async () => {
+        const summary = await work();
+        if (summary) runtime.report(summary);
+      })();
+      return completion;
     };
 
     const tool = captureRebuildTool(runtime);
@@ -79,8 +82,9 @@ describe("wiki_rebuild_meta background + report (issue #77)", () => {
     expect(res.details.background).toBe(true);
     expect(res.content[0].text).toContain("background");
     expect(launched).toEqual([`rebuild_meta:${getVaultPaths(wikiDir).root}`]);
+    await completion;
     expect(reported).toHaveLength(1);
-    expect(reported[0]).toContain("metadata rebuilt");
+    expect(reported[0]).toContain("Private Projection rebuilt");
     // The rebuild actually ran: registry.json now exists.
     const reg = JSON.parse(
       readFileSync(join(getVaultPaths(wikiDir).meta, "registry.json"), "utf-8"),
@@ -95,6 +99,6 @@ describe("wiki_rebuild_meta background + report (issue #77)", () => {
       hasUI: false,
     } as unknown);
     expect(res.details.background).toBe(false);
-    expect(res.content[0].text).toContain("metadata rebuilt");
+    expect(res.content[0].text).toContain("Private Projection rebuilt");
   });
 });
