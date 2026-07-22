@@ -13,7 +13,8 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { fromMarkdown } from "mdast-util-from-markdown";
 import { stringify } from "yaml";
 import {
   type KnowledgeBundleReadResult,
@@ -35,6 +36,47 @@ export interface WriteConceptRequest extends InitializeKnowledgeBundleRequest {
   description: string;
   body: string;
   metadata?: Record<string, YamlValue>;
+}
+
+export interface MoveConceptRequest extends InitializeKnowledgeBundleRequest {
+  fromPath: string;
+  toPath: string;
+}
+
+export interface DeleteConceptRequest extends InitializeKnowledgeBundleRequest {
+  path: string;
+}
+
+export interface WriteBundleAssetRequest extends InitializeKnowledgeBundleRequest {
+  path: string;
+  content: Uint8Array;
+}
+
+export type BundleChange =
+  | ({ kind: "write-concept" } & Omit<WriteConceptRequest, keyof InitializeKnowledgeBundleRequest>)
+  | { kind: "move-concept"; fromPath: string; toPath: string }
+  | { kind: "delete-concept"; path: string }
+  | { kind: "write-asset"; path: string; content: Uint8Array }
+  | { kind: "delete-asset"; path: string };
+
+export interface MutateKnowledgeBundleRequest extends InitializeKnowledgeBundleRequest {
+  changes: BundleChange[];
+}
+
+interface MutableConcept {
+  original?: KnowledgeBundleReadResult["concepts"][number];
+  path: string;
+  metadata: Record<string, YamlValue>;
+  body: string;
+  dirty: boolean;
+  bodyReplaced: boolean;
+}
+
+interface MdNode {
+  type: string;
+  url?: string;
+  children?: MdNode[];
+  position?: { start: { offset?: number }; end: { offset?: number } };
 }
 
 export interface BundleMutationResult {
@@ -294,6 +336,381 @@ export async function writeConcept(request: WriteConceptRequest): Promise<Bundle
   });
 }
 
+export async function mutateKnowledgeBundle(
+  request: MutateKnowledgeBundleRequest,
+): Promise<BundleMutationResult> {
+  return withMutationLock(request.vaultRoot, async (paths) => {
+    const committedAt = validateCommitTime(request.committedAt);
+    if (!Array.isArray(request.changes) || request.changes.length === 0) {
+      throw new BundleMutationError("empty-change-set", "A Bundle Mutation must declare changes.");
+    }
+    const frozenChanges = request.changes.map((change) =>
+      change.kind === "write-asset"
+        ? { ...change, content: Uint8Array.from(change.content) }
+        : structuredClone(change),
+    );
+    const intentHash = hashRequestIntent("mutate-bundle", { ...request, changes: frozenChanges });
+    const state = await requireState(paths);
+    const retry = retryResult(state, request.mutationId, intentHash);
+    if (retry) return retry;
+    validateMutationIdentity(state, request.mutationId);
+    requireRevision(state.revision, request.expectedRevision);
+    const reservedDrift = await validateReservedPreconditions(paths, state);
+    const baselineHash = await bundleContentHash(paths.wiki);
+    const current = await requireValidBundlePrecondition(paths.wiki);
+    const concepts = new Map<string, MutableConcept>();
+    for (const concept of current.concepts) {
+      if (!concept.metadata) continue;
+      concepts.set(concept.path, {
+        original: concept,
+        path: concept.path,
+        metadata: concept.metadata,
+        body: concept.body,
+        dirty: false,
+        bodyReplaced: false,
+      });
+    }
+    const deletedConceptPaths = new Set<string>();
+    const assetChanges: Extract<BundleChange, { kind: "write-asset" | "delete-asset" }>[] = [];
+
+    for (const change of frozenChanges) {
+      if (change.kind === "write-concept") {
+        validateConceptPath(change.path);
+        validateRequiredString("type", change.type);
+        validateRequiredString("title", change.title);
+        validateRequiredString("description", change.description);
+        if (typeof change.body !== "string") {
+          throw new BundleMutationError("invalid-concept-body", "Concept body must be a string.");
+        }
+        for (const key of Object.keys(change.metadata ?? {})) {
+          if (CORE_FIELDS.has(key)) {
+            throw new BundleMutationError(
+              "owned-metadata-field",
+              `The controlled writer owns the ${key} field.`,
+              change.path,
+            );
+          }
+        }
+        const existing = concepts.get(change.path);
+        const unowned = Object.fromEntries(
+          Object.entries(existing?.metadata ?? {}).filter(([key]) => !CORE_FIELDS.has(key)),
+        ) as Record<string, YamlValue>;
+        Object.assign(unowned, change.metadata ?? {});
+        const metadata = {
+          type: change.type,
+          title: change.title,
+          description: change.description,
+          ...unowned,
+          timestamp: committedAt,
+        };
+        const same =
+          existing &&
+          canonicalValue({ ...existing.metadata, timestamp: undefined }) ===
+            canonicalValue({ ...metadata, timestamp: undefined }) &&
+          existing.body === change.body;
+        concepts.set(change.path, {
+          original: existing?.original,
+          path: change.path,
+          metadata: same && existing ? existing.metadata : metadata,
+          body: change.body,
+          dirty: !same,
+          bodyReplaced: !same,
+        });
+      } else if (change.kind === "move-concept") {
+        validateConceptPath(change.fromPath);
+        validateConceptPath(change.toPath);
+        const concept = concepts.get(change.fromPath);
+        if (!concept) {
+          throw new BundleMutationError(
+            "concept-not-found",
+            "The Concept to move does not exist.",
+            change.fromPath,
+          );
+        }
+        if (
+          [...concepts.keys()].some(
+            (path) =>
+              path !== change.fromPath && comparablePath(path) === comparablePath(change.toPath),
+          )
+        ) {
+          throw new BundleMutationError(
+            "concept-path-conflict",
+            "The move destination is occupied.",
+            change.toPath,
+          );
+        }
+        concepts.delete(change.fromPath);
+        concept.path = change.toPath;
+        concept.metadata = { ...concept.metadata, timestamp: committedAt };
+        concept.dirty = true;
+        concepts.set(change.toPath, concept);
+      } else if (change.kind === "delete-concept") {
+        validateConceptPath(change.path);
+        const concept = concepts.get(change.path);
+        if (!concept)
+          throw new BundleMutationError(
+            "concept-not-found",
+            "The Concept to delete does not exist.",
+            change.path,
+          );
+        if (concept.original) deletedConceptPaths.add(concept.original.path);
+        concepts.delete(change.path);
+      } else {
+        validateBundleAssetPath(change.path);
+        assetChanges.push(change);
+      }
+    }
+
+    const movedIds = new Map<string, string>();
+    for (const concept of concepts.values()) {
+      if (concept.original && concept.original.path !== concept.path) {
+        movedIds.set(concept.original.id, concept.path.slice(0, -3));
+      }
+    }
+    for (const concept of concepts.values()) {
+      if (!concept.original || concept.bodyReplaced) continue;
+      const rewritten = rewriteConceptLinks(concept.original, concept.path, movedIds);
+      if (rewritten !== concept.body) {
+        concept.body = rewritten;
+        concept.metadata = { ...concept.metadata, timestamp: committedAt };
+        concept.dirty = true;
+      }
+    }
+    await assertBundleUnchanged(paths, baselineHash);
+    const stage = await copyToStage(paths, request.mutationId);
+    for (const original of current.concepts) {
+      if (!concepts.has(original.path) || deletedConceptPaths.has(original.path)) {
+        await rm(resolve(stage, original.path), { force: true });
+      }
+    }
+    for (const concept of concepts.values()) {
+      if (!concept.dirty) continue;
+      const target = resolve(stage, concept.path);
+      await assertNoSymbolicLinkTraversal(stage, concept.path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, serializeConcept(concept.metadata, concept.body), "utf8");
+    }
+    for (const change of assetChanges) {
+      const target = resolve(stage, change.path);
+      if (change.kind === "delete-asset") {
+        if (!(await readOptional(target)))
+          throw new BundleMutationError(
+            "asset-not-found",
+            "The Bundle asset does not exist.",
+            change.path,
+          );
+        await rm(target);
+      } else {
+        const previous = await readOptional(target);
+        if (!previous?.equals(change.content)) {
+          await assertNoSymbolicLinkTraversal(stage, change.path);
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(target, change.content);
+        }
+      }
+    }
+    const staged = await readKnowledgeBundle(stage, {
+      nativeContractApplicable: false,
+      referenceOperations: [],
+    });
+    for (const concept of staged.concepts) {
+      if (!concept.metadata) continue;
+      const rewritten = rewriteConceptLinks(concept, concept.path, movedIds);
+      if (rewritten === concept.body) continue;
+      await writeFile(
+        resolve(stage, concept.path),
+        serializeConcept({ ...concept.metadata, timestamp: committedAt }, rewritten),
+        "utf8",
+      );
+    }
+    const canonicalChanged = (await changedFilePaths(paths.wiki, stage)).some(
+      (path) => basename(path) !== "index.md" && basename(path) !== "log.md",
+    );
+    if (!canonicalChanged && !reservedDrift) {
+      await rm(stage, { recursive: true, force: true });
+      const result: BundleMutationResult = {
+        status: "no-op",
+        revision: state.revision,
+        mutationId: request.mutationId,
+        changedPaths: [],
+      };
+      state.mutations[request.mutationId] = { intentHash, result };
+      await atomicWriteJson(paths.state, state);
+      return result;
+    }
+    const nextState = nextCommittedState(
+      state,
+      committedAt,
+      "**Applied** a declared multi-file Bundle Mutation.",
+    );
+    await materializeReservedDocuments(stage, nextState);
+    return commitPreparedMutation(paths, stage, baselineHash, nextState, request, intentHash);
+  });
+}
+
+export async function moveConcept(request: MoveConceptRequest): Promise<BundleMutationResult> {
+  return withMutationLock(request.vaultRoot, async (paths) => {
+    const committedAt = validateCommitTime(request.committedAt);
+    validateConceptPath(request.fromPath);
+    validateConceptPath(request.toPath);
+    if (request.fromPath === request.toPath) {
+      throw new BundleMutationError(
+        "invalid-concept-move",
+        "A Concept move must change its path.",
+        request.fromPath,
+      );
+    }
+
+    const intentHash = hashRequestIntent("move-concept", request);
+    const state = await requireState(paths);
+    const retry = retryResult(state, request.mutationId, intentHash);
+    if (retry) return retry;
+    validateMutationIdentity(state, request.mutationId);
+    requireRevision(state.revision, request.expectedRevision);
+    await validateReservedPreconditions(paths, state);
+    const baselineHash = await bundleContentHash(paths.wiki);
+    const current = await requireValidBundlePrecondition(paths.wiki);
+    const source = current.concepts.find(({ path }) => path === request.fromPath);
+    if (!source?.metadata) {
+      throw new BundleMutationError(
+        "concept-not-found",
+        "The source Concept does not exist or cannot be moved safely.",
+        request.fromPath,
+      );
+    }
+    const collision = current.concepts.find(
+      ({ path }) => comparablePath(path) === comparablePath(request.toPath),
+    );
+    if (collision) {
+      throw new BundleMutationError(
+        "concept-path-conflict",
+        `The destination collides with ${collision.path}.`,
+        request.toPath,
+      );
+    }
+    const incomingConcept = current.concepts.find((concept) =>
+      concept.links.some(
+        ({ classification, normalizedTarget }) =>
+          classification === "valid" && normalizedTarget === source.id,
+      ),
+    );
+    if (incomingConcept) {
+      throw new BundleMutationError(
+        "incoming-links-conflict",
+        "The move was rejected rather than silently leaving an incoming Canonical Concept Link broken.",
+        incomingConcept.path,
+      );
+    }
+    await assertBundleUnchanged(paths, baselineHash);
+
+    const nextState = nextCommittedState(
+      state,
+      committedAt,
+      `**Moved** ${escapeText(String(source.metadata.title))} (${request.fromPath} → ${request.toPath}).`,
+    );
+    const stage = await copyToStage(paths, request.mutationId);
+    const target = resolve(stage, request.toPath);
+    await assertNoSymbolicLinkTraversal(stage, request.toPath);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(
+      target,
+      serializeConcept({ ...source.metadata, timestamp: committedAt }, source.body),
+      "utf8",
+    );
+    await rm(resolve(stage, request.fromPath));
+    await materializeReservedDocuments(stage, nextState);
+    return commitPreparedMutation(paths, stage, baselineHash, nextState, request, intentHash);
+  });
+}
+
+export async function deleteConcept(request: DeleteConceptRequest): Promise<BundleMutationResult> {
+  return withMutationLock(request.vaultRoot, async (paths) => {
+    const committedAt = validateCommitTime(request.committedAt);
+    validateConceptPath(request.path);
+    const intentHash = hashRequestIntent("delete-concept", request);
+    const state = await requireState(paths);
+    const retry = retryResult(state, request.mutationId, intentHash);
+    if (retry) return retry;
+    validateMutationIdentity(state, request.mutationId);
+    requireRevision(state.revision, request.expectedRevision);
+    await validateReservedPreconditions(paths, state);
+    const baselineHash = await bundleContentHash(paths.wiki);
+    const current = await requireValidBundlePrecondition(paths.wiki);
+    const concept = current.concepts.find(({ path }) => path === request.path);
+    if (!concept?.metadata) {
+      throw new BundleMutationError(
+        "concept-not-found",
+        "The Concept does not exist or cannot be deleted safely.",
+        request.path,
+      );
+    }
+    await assertBundleUnchanged(paths, baselineHash);
+
+    const nextState = nextCommittedState(
+      state,
+      committedAt,
+      `**Deleted** ${escapeText(String(concept.metadata.title))} (${request.path}).`,
+    );
+    const stage = await copyToStage(paths, request.mutationId);
+    await rm(resolve(stage, request.path));
+    await materializeReservedDocuments(stage, nextState);
+    return commitPreparedMutation(paths, stage, baselineHash, nextState, request, intentHash);
+  });
+}
+
+export async function writeBundleAsset(
+  request: WriteBundleAssetRequest,
+): Promise<BundleMutationResult> {
+  return withMutationLock(request.vaultRoot, async (paths) => {
+    const committedAt = validateCommitTime(request.committedAt);
+    validateBundleAssetPath(request.path);
+    if (!(request.content instanceof Uint8Array)) {
+      throw new BundleMutationError("invalid-asset-content", "Bundle asset content must be bytes.");
+    }
+    const content = Uint8Array.from(request.content);
+    const intentHash = hashRequestIntent("write-bundle-asset", { ...request, content });
+    const state = await requireState(paths);
+    const retry = retryResult(state, request.mutationId, intentHash);
+    if (retry) return retry;
+    validateMutationIdentity(state, request.mutationId);
+    requireRevision(state.revision, request.expectedRevision);
+    const reservedDrift = await validateReservedPreconditions(paths, state);
+    const baselineHash = await bundleContentHash(paths.wiki);
+    await requireValidBundlePrecondition(paths.wiki);
+    const existing = await readOptional(resolve(paths.wiki, request.path));
+    const semanticNoOp = existing?.equals(content) ?? false;
+    if (semanticNoOp && !reservedDrift) {
+      const result: BundleMutationResult = {
+        status: "no-op",
+        revision: state.revision,
+        mutationId: request.mutationId,
+        changedPaths: [],
+      };
+      state.mutations[request.mutationId] = { intentHash, result };
+      await atomicWriteJson(paths.state, state);
+      return result;
+    }
+    await assertBundleUnchanged(paths, baselineHash);
+
+    const nextState = nextCommittedState(
+      state,
+      committedAt,
+      semanticNoOp
+        ? "**Materialized** Reserved Documents."
+        : `**${existing ? "Updated" : "Added"}** bundle asset (${request.path}).`,
+    );
+    const stage = await copyToStage(paths, request.mutationId);
+    if (!semanticNoOp) {
+      const target = resolve(stage, request.path);
+      await assertNoSymbolicLinkTraversal(stage, request.path);
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, content);
+    }
+    await materializeReservedDocuments(stage, nextState);
+    return commitPreparedMutation(paths, stage, baselineHash, nextState, request, intentHash);
+  });
+}
+
 export async function readControlledKnowledgeBundle(
   vaultRoot: string,
 ): Promise<KnowledgeBundleReadResult> {
@@ -439,16 +856,31 @@ function validateRequiredString(field: string, value: string): void {
 }
 
 function validateConceptPath(path: string): void {
-  const logical = path.replaceAll("\\", "/");
-  if (
-    path !== logical ||
-    isAbsolute(path) ||
-    !logical.endsWith(".md") ||
-    basename(logical) === "index.md" ||
-    basename(logical) === "log.md" ||
-    logical.split("/").some((part) => part === "" || part === "." || part === "..")
-  ) {
+  validateLogicalPath(path, "invalid-concept-path", "Concept path is not bundle-safe.");
+  if (!path.endsWith(".md") || basename(path) === "index.md" || basename(path) === "log.md") {
     throw new BundleMutationError("invalid-concept-path", "Concept path is not bundle-safe.", path);
+  }
+}
+
+function validateBundleAssetPath(path: string): void {
+  validateLogicalPath(path, "invalid-asset-path", "Bundle asset path is not bundle-safe.");
+  if (path.endsWith(".md")) {
+    throw new BundleMutationError(
+      "invalid-asset-path",
+      "Markdown files are Concepts or Reserved Documents, not Bundle assets.",
+      path,
+    );
+  }
+}
+
+function validateLogicalPath(path: string, code: string, message: string): void {
+  if (
+    typeof path !== "string" ||
+    path !== path.replaceAll("\\", "/") ||
+    isAbsolute(path) ||
+    path.split("/").some((part) => part === "" || part === "." || part === "..")
+  ) {
+    throw new BundleMutationError(code, message, path);
   }
 }
 
@@ -822,9 +1254,153 @@ function canonicalValue(value: unknown): string {
     .join(",")}}`;
 }
 
+async function requireValidBundlePrecondition(wiki: string): Promise<KnowledgeBundleReadResult> {
+  const current = await readKnowledgeBundle(wiki);
+  const diagnostic = current.nativeContract.diagnostics.find(
+    ({ severity, code }) =>
+      severity === "error" && !code.includes("index") && !code.includes("log"),
+  );
+  if (diagnostic) {
+    throw new BundleMutationError(
+      "invalid-bundle-precondition",
+      diagnostic.message,
+      diagnostic.path,
+    );
+  }
+  return current;
+}
+
+async function assertBundleUnchanged(paths: Paths, baselineHash: string): Promise<void> {
+  if ((await bundleContentHash(paths.wiki)) !== baselineHash) {
+    throw new BundleMutationError(
+      "external-bundle-conflict",
+      "Canonical bytes changed while mutation preconditions were being evaluated.",
+    );
+  }
+}
+
+function nextCommittedState(
+  state: MutationState,
+  committedAt: string,
+  historyText: string,
+): MutationState {
+  const nextState: MutationState = structuredClone(state);
+  nextState.revision += 1;
+  nextState.history.push({ date: committedAt.slice(0, 10), text: historyText });
+  return nextState;
+}
+
+async function copyToStage(paths: Paths, mutationId: string): Promise<string> {
+  const stage = stagePath(paths, mutationId);
+  await rm(stage, { recursive: true, force: true });
+  await cp(paths.wiki, stage, { recursive: true, errorOnExist: false });
+  return stage;
+}
+
+async function commitPreparedMutation(
+  paths: Paths,
+  stage: string,
+  baselineHash: string,
+  nextState: MutationState,
+  request: { mutationId: string },
+  intentHash: string,
+): Promise<BundleMutationResult> {
+  const validation = await readKnowledgeBundle(stage);
+  if (validation.nativeContract.status !== "pass") {
+    const diagnostic = validation.nativeContract.diagnostics.find(
+      ({ severity }) => severity === "error",
+    );
+    await rm(stage, { recursive: true, force: true });
+    throw new BundleMutationError(
+      "invalid-mutation-postcondition",
+      diagnostic?.message ?? "Staged bundle does not satisfy the Native OKF Contract.",
+      diagnostic?.path,
+    );
+  }
+  const result: BundleMutationResult = {
+    status: "committed",
+    revision: nextState.revision,
+    mutationId: request.mutationId,
+    changedPaths: await changedFilePaths(paths.wiki, stage),
+  };
+  nextState.mutations[request.mutationId] = { intentHash, result };
+  return installPreparedStage(paths, stage, baselineHash, nextState, result);
+}
+
+function rewriteConceptLinks(
+  concept: KnowledgeBundleReadResult["concepts"][number],
+  finalSourcePath: string,
+  movedIds: Map<string, string>,
+): string {
+  const sourceMoved = concept.path !== finalSourcePath;
+  const replacements = new Map<string, string>();
+  for (const link of concept.links) {
+    if (!link.normalizedTarget) continue;
+    const movedTarget = movedIds.get(link.normalizedTarget);
+    if (link.classification !== "valid" && !movedTarget) continue;
+    const finalTarget = movedTarget ?? link.normalizedTarget;
+    if (!sourceMoved && finalTarget === link.normalizedTarget) continue;
+    let destination = posix.relative(posix.dirname(finalSourcePath), `${finalTarget}.md`);
+    if (!destination) destination = posix.basename(`${finalTarget}.md`);
+    destination = destination
+      .split("/")
+      .map((part) => (part === ".." ? part : encodePathComponent(part)))
+      .join("/");
+    const hash = link.originalDestination.indexOf("#");
+    if (hash >= 0) destination += link.originalDestination.slice(hash);
+    replacements.set(link.originalDestination, destination);
+  }
+  if (replacements.size === 0) return concept.body;
+  const root = fromMarkdown(concept.body) as unknown as MdNode;
+  const edits: { start: number; end: number; value: string }[] = [];
+  const visit = (node: MdNode): void => {
+    if ((node.type === "link" || node.type === "definition") && node.url && node.position) {
+      const replacement = replacements.get(node.url);
+      const start = node.position.start.offset;
+      const end = node.position.end.offset;
+      if (replacement && start !== undefined && end !== undefined) {
+        const slice = concept.body.slice(start, end);
+        const destinationStart =
+          node.type === "definition" ? slice.indexOf(":") + 1 : slice.lastIndexOf("](") + 2;
+        const local = slice.indexOf(node.url, destinationStart);
+        if (destinationStart <= 1 || local < 0)
+          throw new BundleMutationError(
+            "unsupported-link-rewrite",
+            "A Canonical Concept Link could not be rewritten safely.",
+            concept.path,
+          );
+        edits.push({
+          start: start + local,
+          end: start + local + node.url.length,
+          value: replacement,
+        });
+      }
+    }
+    for (const child of node.children ?? []) visit(child);
+  };
+  visit(root);
+  let body = concept.body;
+  for (const edit of edits.sort((a, b) => b.start - a.start)) {
+    body = `${body.slice(0, edit.start)}${edit.value}${body.slice(edit.end)}`;
+  }
+  return body;
+}
+
 function hashRequestIntent(
-  operation: "initialize" | "write-concept",
-  request: InitializeKnowledgeBundleRequest | WriteConceptRequest,
+  operation:
+    | "mutate-bundle"
+    | "initialize"
+    | "write-concept"
+    | "move-concept"
+    | "delete-concept"
+    | "write-bundle-asset",
+  request:
+    | InitializeKnowledgeBundleRequest
+    | WriteConceptRequest
+    | MoveConceptRequest
+    | DeleteConceptRequest
+    | WriteBundleAssetRequest
+    | MutateKnowledgeBundleRequest,
 ): string {
   const { vaultRoot: _vaultRoot, ...intent } = request;
   return hashIntent({ operation, ...intent });

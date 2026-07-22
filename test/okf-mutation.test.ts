@@ -3,8 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  deleteConcept,
   initializeKnowledgeBundle,
+  moveConcept,
+  mutateKnowledgeBundle,
   readControlledKnowledgeBundle,
+  writeBundleAsset,
   writeConcept,
 } from "../extensions/llm-wiki/lib/okf-mutation.js";
 
@@ -353,6 +357,242 @@ describe("native OKF Bundle Mutations", () => {
     await expect(readFile(join(root, ".llm-wiki/wiki/note.md"), "utf8")).resolves.toBe(
       "external bytes\n",
     );
+  });
+
+  it("moves a Concept and rejects a move that would silently break incoming links", async () => {
+    const root = await vault();
+    await initializeKnowledgeBundle({
+      vaultRoot: root,
+      mutationId: "init",
+      expectedRevision: 0,
+      committedAt: "2026-07-22T10:00:00Z",
+    });
+    await writeConcept({
+      vaultRoot: root,
+      mutationId: "create",
+      expectedRevision: 1,
+      committedAt: "2026-07-23T10:00:00Z",
+      path: "topics/original.md",
+      type: "concept",
+      title: "Original",
+      description: "A movable Concept.",
+      body: "Body\n",
+    });
+
+    const moveRequest = {
+      vaultRoot: root,
+      mutationId: "move",
+      expectedRevision: 2,
+      committedAt: "2026-07-24T10:00:00Z",
+      fromPath: "topics/original.md",
+      toPath: "archive/renamed.md",
+    } as const;
+    const moved = await moveConcept(moveRequest);
+    const moveRetry = await moveConcept(moveRequest);
+    const bundle = await readControlledKnowledgeBundle(root);
+
+    expect(moved).toMatchObject({ status: "committed", revision: 3 });
+    expect(moveRetry).toEqual(moved);
+    expect(bundle.concepts.map(({ path }) => path)).toEqual(["archive/renamed.md"]);
+    expect(bundle.concepts[0]?.metadata?.timestamp).toBe("2026-07-24T10:00:00Z");
+    await expect(
+      readFile(join(root, ".llm-wiki/wiki/topics/index.md"), "utf8"),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await writeConcept({
+      vaultRoot: root,
+      mutationId: "linker",
+      expectedRevision: 3,
+      committedAt: "2026-07-25T10:00:00Z",
+      path: "linker.md",
+      type: "concept",
+      title: "Linker",
+      description: "Links to the moved Concept.",
+      body: "[Target](archive/renamed.md)\n",
+    });
+    await expect(
+      moveConcept({
+        vaultRoot: root,
+        mutationId: "unsafe-move",
+        expectedRevision: 4,
+        committedAt: "2026-07-26T10:00:00Z",
+        fromPath: "archive/renamed.md",
+        toPath: "elsewhere.md",
+      }),
+    ).rejects.toMatchObject({ code: "incoming-links-conflict", path: "linker.md" });
+  });
+
+  it("commits a declared multi-file change set and rewrites every affected relationship atomically", async () => {
+    const root = await vault();
+    await initializeKnowledgeBundle({
+      vaultRoot: root,
+      mutationId: "init",
+      expectedRevision: 0,
+      committedAt: "2026-07-22T10:00:00Z",
+    });
+    const concepts = [
+      { path: "topics/target.md", title: "Target", body: "[Self](target.md#self)\n" },
+      { path: "root-link.md", title: "Root link", body: "[Target](topics/target.md#part)\n" },
+      {
+        path: "notes/reference.md",
+        title: "Reference link",
+        body: "[Target][target]\n\n[target]: ../topics/target.md#part\n",
+      },
+      { path: "temporary.md", title: "Temporary", body: "Delete me.\n" },
+      { path: "stable.md", title: "Stable", body: "Unrelated bytes.\n" },
+    ];
+    let revision = 1;
+    for (const concept of concepts) {
+      await writeConcept({
+        vaultRoot: root,
+        mutationId: `create-${revision}`,
+        expectedRevision: revision,
+        committedAt: `2026-07-${22 + revision}T10:00:00Z`,
+        type: "concept",
+        description: `${concept.title} description.`,
+        ...concept,
+      });
+      revision += 1;
+    }
+
+    const stableBefore = await readFile(join(root, ".llm-wiki/wiki/stable.md"));
+    const request = {
+      vaultRoot: root,
+      mutationId: "multi-file",
+      expectedRevision: 6,
+      committedAt: "2026-08-01T10:00:00Z",
+      changes: [
+        {
+          kind: "move-concept" as const,
+          fromPath: "topics/target.md",
+          toPath: "archive/deep/renamed.md",
+        },
+        { kind: "delete-concept" as const, path: "temporary.md" },
+        {
+          kind: "write-concept" as const,
+          path: "new.md",
+          type: "concept",
+          title: "New",
+          description: "A new Concept in the same change set.",
+          body: "[Moved](topics/target.md#new)\n",
+        },
+        {
+          kind: "write-asset" as const,
+          path: "assets/data.bin",
+          content: Uint8Array.from([7, 8, 9]),
+        },
+      ],
+    };
+    const result = await mutateKnowledgeBundle(request);
+    const retry = await mutateKnowledgeBundle(request);
+    const bundle = await readControlledKnowledgeBundle(root);
+
+    expect(result).toMatchObject({ status: "committed", revision: 7 });
+    expect(retry).toEqual(result);
+    expect(bundle.concepts.map(({ path }) => path)).toEqual([
+      "archive/deep/renamed.md",
+      "new.md",
+      "notes/reference.md",
+      "root-link.md",
+      "stable.md",
+    ]);
+    expect(bundle.relationships).toEqual(
+      [
+        { source: "archive/deep/renamed", target: "archive/deep/renamed" },
+        { source: "new", target: "archive/deep/renamed" },
+        { source: "notes/reference", target: "archive/deep/renamed" },
+        { source: "root-link", target: "archive/deep/renamed" },
+      ].filter(({ source, target }) => source !== target),
+    );
+    await expect(readFile(join(root, ".llm-wiki/wiki/root-link.md"), "utf8")).resolves.toContain(
+      "[Target](archive/deep/renamed.md#part)",
+    );
+    await expect(readFile(join(root, ".llm-wiki/wiki/new.md"), "utf8")).resolves.toContain(
+      "[Moved](archive/deep/renamed.md#new)",
+    );
+    await expect(
+      readFile(join(root, ".llm-wiki/wiki/notes/reference.md"), "utf8"),
+    ).resolves.toContain("[target]: ../archive/deep/renamed.md#part");
+    await expect(
+      readFile(join(root, ".llm-wiki/wiki/archive/deep/renamed.md"), "utf8"),
+    ).resolves.toContain("[Self](renamed.md#self)");
+    expect(
+      bundle.concepts
+        .filter(({ path }) => path !== "stable.md")
+        .every(({ metadata }) => metadata?.timestamp === "2026-08-01T10:00:00Z"),
+    ).toBe(true);
+    expect(await readFile(join(root, ".llm-wiki/wiki/stable.md"))).toEqual(stableBefore);
+    expect(await readFile(join(root, ".llm-wiki/wiki/assets/data.bin"))).toEqual(
+      Buffer.from([7, 8, 9]),
+    );
+    expect(bundle.nativeContract.status).toBe("pass");
+
+    const assetDeletion = await mutateKnowledgeBundle({
+      vaultRoot: root,
+      mutationId: "delete-asset",
+      expectedRevision: 7,
+      committedAt: "2026-08-02T10:00:00Z",
+      changes: [{ kind: "delete-asset", path: "assets/data.bin" }],
+    });
+    expect(assetDeletion).toMatchObject({ status: "committed", revision: 8 });
+    await expect(readFile(join(root, ".llm-wiki/wiki/assets/data.bin"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("deletes Concepts and writes opaque Bundle assets through the shared mutation boundary", async () => {
+    const root = await vault();
+    await initializeKnowledgeBundle({
+      vaultRoot: root,
+      mutationId: "init",
+      expectedRevision: 0,
+      committedAt: "2026-07-22T10:00:00Z",
+    });
+    await writeConcept({
+      vaultRoot: root,
+      mutationId: "create",
+      expectedRevision: 1,
+      committedAt: "2026-07-23T10:00:00Z",
+      path: "temporary.md",
+      type: "concept",
+      title: "Temporary",
+      description: "A temporary Concept.",
+      body: "Body\n",
+    });
+
+    const assetRequest = {
+      vaultRoot: root,
+      mutationId: "asset",
+      expectedRevision: 2,
+      committedAt: "2026-07-24T10:00:00Z",
+      path: "images/pixel.bin",
+      content: Uint8Array.from([0, 255, 1]),
+    } as const;
+    const asset = await writeBundleAsset(assetRequest);
+    const assetRetry = await writeBundleAsset(assetRequest);
+    const deleteRequest = {
+      vaultRoot: root,
+      mutationId: "delete",
+      expectedRevision: 3,
+      committedAt: "2026-07-25T10:00:00Z",
+      path: "temporary.md",
+    } as const;
+    const deleted = await deleteConcept(deleteRequest);
+    const deleteRetry = await deleteConcept(deleteRequest);
+    const bundle = await readControlledKnowledgeBundle(root);
+
+    expect(asset).toMatchObject({ status: "committed", revision: 3 });
+    expect(assetRetry).toEqual(asset);
+    expect(deleted).toMatchObject({ status: "committed", revision: 4 });
+    expect(deleteRetry).toEqual(deleted);
+    expect(bundle.concepts).toEqual([]);
+    expect(bundle.assets).toEqual([{ path: "images/pixel.bin" }]);
+    expect(await readFile(join(root, ".llm-wiki/wiki/images/pixel.bin"))).toEqual(
+      Buffer.from([0, 255, 1]),
+    );
+    expect(bundle.nativeContract.status).toBe("pass");
   });
 
   it("rejects stale revisions, changed retry intent, invalid paths, and unrecognized index edits", async () => {
