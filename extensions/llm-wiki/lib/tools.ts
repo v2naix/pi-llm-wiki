@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { parse } from "yaml";
@@ -11,8 +11,7 @@ import { readBundleRevision } from "./okf-mutation.js";
 import { type YamlValue, readKnowledgeBundle } from "./okf-reader.js";
 import { executePiWriteOperation } from "./pi-write-adapter.js";
 import {
-  privateProjectionFreshSync,
-  readPrivateProjectionSync,
+  readFreshPrivateProjectionSync,
   rebuildPrivateProjections,
 } from "./private-projections.js";
 import type { Runtime } from "./runtime.js";
@@ -37,10 +36,13 @@ function getPaths(cwd?: string): VaultPaths {
 }
 
 function currentRegistry(paths: VaultPaths): Registry {
-  const projection = readPrivateProjectionSync(paths);
-  return projection && privateProjectionFreshSync(paths)
-    ? projection.registry
-    : { version: "2.0", last_updated: "", pages: {} };
+  return (
+    readFreshPrivateProjectionSync(paths)?.registry ?? {
+      version: "2.0",
+      last_updated: "",
+      pages: {},
+    }
+  );
 }
 
 function requireVault(paths: VaultPaths): { ok: true } | { ok: false; reason: string } {
@@ -106,8 +108,8 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
     name: "wiki_bootstrap",
     label: "Wiki Bootstrap",
     description:
-      "Initialize a new LLM Wiki vault with the 4-layer architecture. " +
-      "Creates config, templates, schema, and metadata scaffolding.",
+      "Initialize a Canonical Knowledge Bundle and its Private Vault Layer. " +
+      "Creates configuration, templates, operating rules, and initial Reserved Documents.",
     promptSnippet: "Initialize a new LLM Wiki vault",
     promptGuidelines: ["Use wiki_bootstrap when the user wants to start a new wiki."],
     parameters: Type.Object({
@@ -150,7 +152,7 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
         "| meta/* | extension | generated Private Projections |",
         "| . | human + explicit request | operating rules |",
         "",
-        "## Source Packet Format",
+        "## Raw Source Packet Format",
         "",
         "```",
         "raw/sources/<opaque-raw-source-id>/",
@@ -189,9 +191,9 @@ export function registerWikiBootstrap(pi: ExtensionAPI): void {
               "**Scope:** project-local",
               "",
               "**Structure:**",
-              "- .llm-wiki/raw/sources/ — immutable source packets",
-              "- .llm-wiki/wiki/ — editable knowledge pages",
-              "- .llm-wiki/meta/ — auto-generated metadata",
+              "- .llm-wiki/raw/sources/ — immutable Raw Source Packets in the Private Vault Layer",
+              "- .llm-wiki/wiki/ — editable Canonical Knowledge Bundle",
+              "- .llm-wiki/meta/ — revision-bound Private Projections",
               "- .llm-wiki/ — config and templates",
               "- .llm-wiki/WIKI_SCHEMA.md — operating rules",
               "",
@@ -304,13 +306,13 @@ export function registerWikiIngest(pi: ExtensionAPI, runtime?: Runtime): void {
     name: "wiki_ingest",
     label: "Wiki Ingest",
     description:
-      "Process uningested source packets. By default synthesis runs in the background (non-blocking) on the configured task model; pass background=false to return extracted content for the main agent to synthesize itself.",
-    promptSnippet: "Ingest source packets (background synthesis by default)",
+      "Process captured Raw Source Packets. By default controlled synthesis runs in the background (non-blocking) on the configured task model; pass background=false to inspect pending evidence.",
+    promptSnippet: "Synthesize captured Source Concepts (background by default)",
     promptGuidelines: [
       "Use wiki_ingest when the user wants to process captured sources.",
       "By default ingestion runs in the BACKGROUND — you'll get a notification, not extracted content. Do NOT synthesize those sources yourself.",
       "If the tool returns extracted content (background unavailable, or background=false), then read each source's extracted.md, update its source page, create entity/concept pages, and cross-reference.",
-      "The extension auto-updates metadata — you do NOT need to edit meta/ files.",
+      "The extension rebuilds Private Projections — never edit meta/ files manually.",
     ],
     parameters: Type.Object({
       source_id: Type.Optional(
@@ -614,6 +616,14 @@ export function registerWikiEnsurePage(pi: ExtensionAPI, runtime?: Runtime): voi
   });
 }
 
+function canonicalConceptLink(fromPath: string, targetId: string): string {
+  const targetPath = targetId.endsWith(".md") ? targetId : `${targetId}.md`;
+  const destination = posix.relative(posix.dirname(fromPath), targetPath);
+  const encoded = destination.split("/").map(encodeURIComponent).join("/");
+  const label = posix.basename(targetId).replaceAll("-", " ");
+  return `[${label}](${encoded})`;
+}
+
 function buildNativePagePayload(
   type: GeneralPageType,
   title: string,
@@ -843,7 +853,7 @@ export function registerWikiSearch(pi: ExtensionAPI): void {
             text: [
               `🔍 **${matches.length} result(s)** for "${params.query}":`,
               "",
-              ...matches.map((m) => `- [[${m.id}]] — *${m.type}* — ${m.title}`),
+              ...matches.map((m) => `- [${m.title}](${m.id}.md) — *${m.type}*`),
             ].join("\n"),
           },
         ],
@@ -955,7 +965,7 @@ async function runWikiLint(paths: VaultPaths, autoFix: boolean): Promise<string>
           type: "concept",
           title,
           description: `A knowledge gap mentioned by ${gap.mentionedBy.length} existing Concepts; substantive detail is not yet recorded.`,
-          body: `## Knowledge gap\n\nThis topic was mentioned by ${gap.mentionedBy.map((id) => `[[${id}]]`).join(", ")} but still needs substantive knowledge.\n`,
+          body: `## Knowledge gap\n\nThis topic was mentioned by ${gap.mentionedBy.map((id) => canonicalConceptLink(`${folder}/${name}.md`, id)).join(", ")} but still needs substantive knowledge.\n`,
           metadata: { status: "stub", mentioned_by: gap.mentionedBy },
         });
         fixesApplied++;
@@ -1025,9 +1035,7 @@ export function registerWikiStatus(pi: ExtensionAPI): void {
         };
       }
 
-      const projection = readPrivateProjectionSync(paths);
-      const freshProjection =
-        projection && privateProjectionFreshSync(paths) ? projection : undefined;
+      const freshProjection = readFreshPrivateProjectionSync(paths);
       const registry = currentRegistry(paths);
       const backlinks = freshProjection?.backlinks ?? {};
       const config = readJson<Record<string, unknown>>(join(paths.dotWiki, "config.json"), {});
@@ -1086,9 +1094,9 @@ export function registerWikiRebuildMeta(pi: ExtensionAPI, runtime?: Runtime): vo
   pi.registerTool({
     name: "wiki_rebuild_meta",
     label: "Wiki Rebuild Meta",
-    description: "Force a full metadata rebuild (registry, backlinks, index, log).",
-    promptSnippet: "Rebuild all wiki metadata",
-    promptGuidelines: ["Use wiki_rebuild_meta if metadata seems out of sync."],
+    description: "Publish a complete revision-bound Private Projection generation.",
+    promptSnippet: "Rebuild wiki Private Projections",
+    promptGuidelines: ["Use wiki_rebuild_meta if a Private Projection is missing or stale."],
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const paths = getPaths(ctx.cwd);
@@ -1106,11 +1114,12 @@ export function registerWikiRebuildMeta(pi: ExtensionAPI, runtime?: Runtime): vo
       return dispatchReported(runtime, ctx as ToolCtx, {
         label: `rebuild_meta:${paths.root}`,
         started:
-          "\u{1F9E0} LLM Wiki: metadata rebuild started in the background — the result will be reported when it completes.",
+          "\u{1F9E0} LLM Wiki: Private Projection rebuild started in the background — the result will be reported when it completes.",
         work: async () => {
           const result = await rebuildPrivateProjections(paths);
-          const registry = readPrivateProjectionSync(paths)?.registry;
-          return `✅ LLM Wiki: metadata rebuilt — ${Object.keys(registry?.pages ?? {}).length} pages indexed (private-only).`;
+          const registry = readFreshPrivateProjectionSync(paths)?.registry;
+          const effect = result.status === "no-op" ? "no-op" : result.effect;
+          return `✅ LLM Wiki: Private Projection rebuilt — ${Object.keys(registry?.pages ?? {}).length} Concepts indexed (${effect}).`;
         },
       });
     },

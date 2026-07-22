@@ -9,8 +9,10 @@ import {
 } from "./concept-producers.js";
 import { captureControlledSource, synthesizeControlledSource } from "./controlled-source.js";
 import {
+  BundleMutationError,
   type BundleMutationResult,
   initializeKnowledgeBundle,
+  readBundleRevision,
   writeBundleAsset,
 } from "./okf-mutation.js";
 import {
@@ -70,7 +72,8 @@ export type ControlledWriteOperation =
       topics: Array<{ title: string; description: string }>;
       quotes?: Array<{ text: string; attribution?: string }>;
     } & MutationOperation)
-  | ({ kind: "write-asset"; path: string; content: Uint8Array } & MutationOperation);
+  | ({ kind: "write-asset"; path: string; content: Uint8Array } & MutationOperation)
+  | ({ kind: "rebuild-private-projections" } & MutationOperation);
 
 export interface ControlledValidationReport {
   okfConformance: ValidationResult;
@@ -79,8 +82,8 @@ export interface ControlledValidationReport {
 }
 
 export interface ControlledWriteResult {
-  status: BundleMutationResult["status"];
-  effect: "canonical" | "no-op";
+  status: BundleMutationResult["status"] | "published";
+  effect: "canonical" | "private-only" | "no-op";
   revision: number;
   mutationId: string;
   changedPaths: string[];
@@ -100,6 +103,26 @@ export async function executeControlledWriteOperation(
 ): Promise<ControlledWriteResult> {
   let mutation: BundleMutationResult;
   let source: Pick<ControlledWriteResult, "conceptPath" | "rawSourceId" | "curationState"> = {};
+
+  if (operation.kind === "rebuild-private-projections") {
+    const revision = await readBundleRevision(vaultRoot);
+    if (operation.expectedRevision !== revision) {
+      throw new BundleMutationError(
+        "stale-revision",
+        `Expected Bundle Revision ${operation.expectedRevision}, current revision is ${revision}.`,
+      );
+    }
+    const paths = getVaultPaths(vaultRoot);
+    const projection = await rebuildPrivateProjections(paths);
+    return {
+      status: projection.status,
+      effect: projection.status === "published" ? "private-only" : "no-op",
+      revision,
+      mutationId: operation.mutationId,
+      changedPaths: [],
+      validation: validationReport(await readKnowledgeBundle(paths.wiki)),
+    };
+  }
 
   switch (operation.kind) {
     case "initialize":

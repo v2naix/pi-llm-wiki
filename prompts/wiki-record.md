@@ -23,14 +23,14 @@ Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand th
    - `title`: short descriptive phrase for the task (≤60 chars, noun phrase)
    - `outcome`: optional — `success` (default), `failure`, or `partial`
    - The extension auto-extracts the tool-call trajectory from the live session, so you usually do **not** pass `steps` manually.
-2. Open the generated skeleton case page in `wiki/cases/` and flesh out:
+2. Use `wiki_ensure_page(type="case")` to create or replace the Case Concept through a Bundle Mutation:
    - **Task** — what was requested
    - **Approach** — the key steps and decisions (not every tool call, just the meaningful ones)
    - **Outcome** — the result, and anything worth reusing or avoiding next time
-3. If the task taught a reusable pattern, run `wiki_distill_skills` and create a `skill` page via `wiki_ensure_page(type="skill")` that cites `[[trajectories/TRJ-...]]`.
+3. If the task taught a reusable pattern, run `wiki_distill_skills` and create a Skill Concept via `wiki_ensure_page(type="skill")`. Keep private trajectory identifiers in disclosure-safe project metadata rather than canonical links.
 4. Confirm the case (and any skill) will be surfaced by `wiki_recall` / `wiki_recall_skill` in future sessions.
 
 **Rules:**
 - Only record tasks worth learning from — non-trivial debugging, refactors, integrations, multi-step workflows. Skip trivial one-shot answers.
-- The raw trajectory packet under `raw/trajectories/` is immutable. Edit the `case`/`skill` pages, never the packet.
+- The raw trajectory packet under `raw/trajectories/` is immutable. Change Case and Skill Concepts only through controlled tools; never edit the packet.
 - One trajectory per `wiki_capture_trajectory` call.

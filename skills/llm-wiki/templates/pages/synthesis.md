@@ -1,14 +1,12 @@
 ---
 type: synthesis
-topic: analysis topic
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-sources_count: N
+title: Synthesis Title
+description: A concise cross-source synthesis of the stated question.
+timestamp: "YYYY-MM-DDTHH:MM:SSZ"
+sources_count: 0
 ---
 
 # Synthesis Title
-
-> _Cross-cutting analysis derived from [N] sources._
 
 ## Question
 
@@ -16,13 +14,13 @@ sources_count: N
 
 ## Analysis
 
-[Synthesized content drawing from multiple sources. Identify patterns, connections, and contradictions across sources.]
+[Synthesized content drawing from multiple sources. Identify patterns, connections, and contradictions.]
 
 ## Key Insights
 
-1. [Insight 1 — novel connection discovered]
-2. [Insight 2 — pattern across sources]
-3. [Insight 3 — remaining question or tension]
+1. [Novel connection]
+2. [Pattern across sources]
+3. [Remaining question or tension]
 
 ## Conclusion
 
@@ -30,11 +28,11 @@ sources_count: N
 
 ## Sources Used
 
-- [[source-1]]
-- [[source-2]]
-- [[source-3]]
+- [Source one](../sources/source-1.md)
+- [Source two](../sources/source-2.md)
+- [Source three](../sources/source-3.md)
 
-## Related Pages
+## Related Concepts
 
-- [[concept-1]]
-- [[entity-1]]
+- [Concept one](../concepts/concept-1.md)
+- [Entity one](../entities/entity-1.md)

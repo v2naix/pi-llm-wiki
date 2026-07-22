@@ -84,7 +84,7 @@ describe("wiki_rebuild_meta background + report (issue #77)", () => {
     expect(launched).toEqual([`rebuild_meta:${getVaultPaths(wikiDir).root}`]);
     await completion;
     expect(reported).toHaveLength(1);
-    expect(reported[0]).toContain("metadata rebuilt");
+    expect(reported[0]).toContain("Private Projection rebuilt");
     // The rebuild actually ran: registry.json now exists.
     const reg = JSON.parse(
       readFileSync(join(getVaultPaths(wikiDir).meta, "registry.json"), "utf-8"),
@@ -99,6 +99,6 @@ describe("wiki_rebuild_meta background + report (issue #77)", () => {
       hasUI: false,
     } as unknown);
     expect(res.details.background).toBe(false);
-    expect(res.content[0].text).toContain("metadata rebuilt");
+    expect(res.content[0].text).toContain("Private Projection rebuilt");
   });
 });

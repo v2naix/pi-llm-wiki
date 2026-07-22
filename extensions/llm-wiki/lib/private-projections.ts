@@ -227,9 +227,18 @@ export function readPrivateProjectionSync(
   return pointer ? readGenerationSync(paths, pointer) : undefined;
 }
 
-export function privateProjectionFreshSync(paths: VaultPaths): boolean {
+/** Select a projection only when its complete generation matches current canonical bytes. */
+export function readFreshPrivateProjectionSync(
+  paths: VaultPaths,
+): PrivateProjectionSnapshot | undefined {
   const snapshot = readPrivateProjectionSync(paths);
-  return Boolean(snapshot && sameSource(snapshot.manifest.source, sourceIdentity(paths)));
+  return snapshot && sameSource(snapshot.manifest.source, sourceIdentity(paths))
+    ? snapshot
+    : undefined;
+}
+
+export function privateProjectionFreshSync(paths: VaultPaths): boolean {
+  return readFreshPrivateProjectionSync(paths) !== undefined;
 }
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | undefined {

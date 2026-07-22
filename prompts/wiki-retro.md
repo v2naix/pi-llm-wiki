@@ -23,12 +23,12 @@ Read the LLM Wiki skill at `.pi/skills/llm-wiki/SKILL.md` first to understand th
 2. For each insight, call `wiki_retro` with:
    - `slug`: unique kebab-case identifier (e.g., `jwt-revocation-pattern`)
    - `title`: short descriptive phrase, ≤60 chars, noun phrase not a sentence
-   - `body`: markdown explanation with `[[wikilinks]]` to related wiki pages
+   - `body`: Markdown explanation with standard file-relative `.md` links to related Concepts
    - `category`: optional (frontend, architecture, devops, bugfix, design, etc.)
 3. Confirm the insight was saved and will be surfaced by layered recall in future sessions
-4. If the insight relates to existing wiki pages, update those pages with cross-references
+4. If the insight relates to existing Concepts, use controlled tools to add standard Markdown cross-references
 
 **Rules:**
 - One atomic insight per `wiki_retro` call. Use multiple calls for multiple insights.
 - Don't save obvious things. Save non-obvious patterns, tradeoffs, and design decisions.
-- Always add `[[wikilinks]]` to connect the new insight with existing wiki knowledge.
+- Use standard file-relative Markdown links ending in `.md` to connect the new insight with existing Concepts.

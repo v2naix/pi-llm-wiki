@@ -1,19 +1,16 @@
 ---
 type: concept
-domain: ai # ai | engineering | business | product | design | personal
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-sources:
-  - raw/articles/filename.md
+title: Concept Name
+description: A concise and truthful definition of this Concept.
+timestamp: "YYYY-MM-DDTHH:MM:SSZ"
+domain: ai
 ---
 
 # Concept Name
 
-One-line definition of this concept.
-
 ## Definition
 
-[Clear, concise explanation of what this concept is.]
+[Clear, concise explanation of what this Concept is.]
 
 ## How It Works
 
@@ -21,14 +18,14 @@ One-line definition of this concept.
 
 ## Examples
 
-- **Example 1**: [Concrete example from sources]
-- **Example 2**: [Another example]
+- **Example 1:** [Concrete example from sources]
+- **Example 2:** [Another example]
 
 ## Related Concepts
 
-- [[related-concept-1]]
-- [[related-concept-2]]
+- [Related concept one](related-concept-1.md)
+- [Related concept two](related-concept-2.md)
 
-## Sources
+# Citations
 
-- [raw/articles/filename.md](../raw/articles/filename.md)
+1. [Source Concept](../sources/source-1.md)

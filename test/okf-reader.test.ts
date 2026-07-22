@@ -200,6 +200,33 @@ describe("readKnowledgeBundle", () => {
     );
   });
 
+  it("consumes unknown OKF versions best-effort with an explicit outside-profile diagnostic", async () => {
+    const root = await bundle();
+    await put(root, "concept.md", concept("Body"));
+    await put(
+      root,
+      "index.md",
+      '---\nokf_version: "9.9"\n---\n\n# concept\n\n- [Example](concept.md) - A real description\n',
+    );
+    await put(root, "log.md", "# 2026-07-22\n\n- **Added** Example.\n");
+
+    const result = await readKnowledgeBundle(root);
+
+    expect(result.okfConformance).toMatchObject({
+      status: "pass",
+      diagnostics: expect.arrayContaining([
+        expect.objectContaining({
+          profile: "okf-conformance",
+          severity: "warning",
+          code: "unknown-okf-version",
+          path: "index.md",
+        }),
+      ]),
+    });
+    expect(result.nativeContract.status).toBe("fail");
+    expect(result.referenceCompatibility).toHaveLength(5);
+  });
+
   it("does not follow a symbolic link out of the Canonical Knowledge Bundle", async () => {
     const root = await bundle();
     const outside = join(root, "..", "private-concept.md");

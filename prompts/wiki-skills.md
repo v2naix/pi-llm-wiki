@@ -20,7 +20,7 @@ $ARGUMENTS
    - `kind`: optional — `skill`, `case`, or `any` (default)
    - `max_results`: optional (default 5)
 2. Read the most relevant skill/case pages with `read`.
-3. Apply the recalled pattern to the current task, citing the source page with `[[skills/...]]` or `[[cases/...]]` where helpful.
+3. Apply the recalled pattern to the current task, citing its Concept with a standard Markdown link such as `[Pattern](../skills/pattern.md)` or `[Case](../cases/case.md)` where helpful.
 4. If no relevant skill/case exists, proceed with the task and consider running `/wiki-record` afterward so the next attempt benefits.
 
 **Tip:** Skills generalize across many trajectories ("how I do X"); cases are concrete past runs ("the time I did X for project Y"). Search `any` first, then narrow.

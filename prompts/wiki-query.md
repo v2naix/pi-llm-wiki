@@ -17,7 +17,7 @@ $ARGUMENTS
 
 1. Call `wiki_recall(query=<question>)` to find relevant wiki pages.
 2. Read the full content of each matching page using the `read` tool.
-3. Synthesize an answer with `[[wikilink]]` citations to specific wiki pages.
+3. Synthesize an answer with standard Markdown citations to specific Concepts (for example, `[RAG](../concepts/rag.md)`).
 4. If the answer reveals a new connection or analysis worth preserving:
    - Call `wiki_ensure_page(type=synthesis, title=<title>, content=<content>)` to save it
 5. Call `wiki_log_event(kind=query, details={question: <question>})` to log the query.
@@ -32,6 +32,6 @@ $ARGUMENTS
 /wiki-query What are the key differences between RAG and LLM Wiki?
 → Calls wiki_recall(query="RAG LLM Wiki differences")
 → Reads matching pages
-→ Synthesizes a comparison with [[wikilink]] citations
+→ Synthesizes a comparison with standard Markdown Concept citations
 → Saves as synthesis page via wiki_ensure_page(type=synthesis, ...)
 ```

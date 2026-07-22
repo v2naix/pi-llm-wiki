@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import { readBundleRevision } from "../extensions/llm-wiki/lib/okf-mutation.js";
-import { readPrivateProjectionSync } from "../extensions/llm-wiki/lib/private-projections.js";
+import { readFreshPrivateProjectionSync } from "../extensions/llm-wiki/lib/private-projections.js";
 import type { VaultPaths as NativeVaultPaths } from "../extensions/llm-wiki/lib/utils.js";
 import { executeMcpWriteOperation } from "./write-adapter.js";
 
@@ -119,7 +119,7 @@ function readJson<T>(path: string, defaultVal: T): T {
 
 function currentRegistry(paths: VaultPaths) {
   return (
-    readPrivateProjectionSync(paths)?.registry ?? {
+    readFreshPrivateProjectionSync(paths)?.registry ?? {
       version: "2.0",
       last_updated: "",
       pages: {},

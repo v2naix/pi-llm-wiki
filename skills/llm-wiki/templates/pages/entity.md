@@ -1,31 +1,28 @@
 ---
 type: entity
-category: person # person | organization | tool | project | product
-created: YYYY-MM-DD
-updated: YYYY-MM-DD
-sources:
-  - raw/articles/filename.md
+title: Entity Name
+description: A concise and truthful description of this entity and why it matters.
+timestamp: "YYYY-MM-DDTHH:MM:SSZ"
+category: organization
 ---
 
 # Entity Name
 
-One-line description of who/what this is and why they matter.
-
 ## Overview
 
-[2-3 paragraphs covering key facts, role, significance, and context.]
+[Key facts, role, significance, and context.]
 
 ## Key Facts
 
-- **Role**: [what they do]
-- **Known for**: [key contributions]
-- **Related**: [connections]
+- **Role:** [what it does]
+- **Known for:** [key contributions]
+- **Related:** [connections]
 
-## Links
+## Related Concepts
 
-- [[related-concept]]
-- [[related-entity]]
+- [Related concept](../concepts/related-concept.md)
+- [Related entity](related-entity.md)
 
-## Sources
+# Citations
 
-- [raw/articles/filename.md](../raw/articles/filename.md)
+1. [Source Concept](../sources/source-1.md)

@@ -37,6 +37,12 @@ Verwandle Rohquellen (URLs, PDFs, Markdown, JSON, XML) in ein dauerhaftes, verkn
 
 ---
 
+## Native OKF support
+
+`.llm-wiki/wiki/` is the editable and distributable **Canonical Knowledge Bundle**. Pi Extension and MCP Controlled Write Adapters share one Bundle Mutation seam; controlled direct canonical writes and direct edits to generated Reserved Documents are blocked. Private projections and Raw Source Packets remain in the **Private Vault Layer**. Controlled writers emit standard file-relative Markdown links ending in `.md`.
+
+Support targets OKF v0.1 Draft at pinned specification commit `ee67a5ca27044ebe7c38385f5b6cffc2305a9c1a`. Validation separately reports the Native OKF Contract and named reference-tool operations at pinned revision `d44368c15e38e7c92481c5992e4f9b5b421a801d`; no unqualified “Google-compatible” claim is made.
+
 ## Schnellstart
 
 ```bash
@@ -73,7 +79,7 @@ Das Ergebnis ist ein Wiki, das wächst, während du Quellen erfasst, Fragen stel
 | Capability | Description |
 |------------|-------------|
 | 🏠 **Personal fallback** | Always-on `~/.llm-wiki/` vault — knowledge compounds across projects even when no project wiki exists |
-| 🔗 **Immutable source capture** | URLs, local files (PDF/md/txt/html/XML/JSON), or pasted text → structured source packets |
+| 🔗 **Immutable source capture** | URLs, local files (PDF/md/txt/html/XML/JSON), or pasted text → immutable Raw Source Packets plus Source Concepts |
 | 🧠 **Automated ingestion** | `wiki_ingest` batch-processes sources into concept, entity, synthesis & analysis pages |
 | 🔍 **Full-text search** | Generated registry with keyword lookup across all pages and sources |
 | 🩺 **Mechanical linting** | Orphans, broken links, duplicate aliases, coverage gaps, stale captures |
@@ -83,8 +89,8 @@ Das Ergebnis ist ein Wiki, das wächst, während du Quellen erfasst, Fragen stel
 | 📝 **Auto-bootstrap** | Extension suggests creating a wiki when none exists in the current directory |
 | 💾 **Lightweight capture** | `wiki_retro` — save atomic insights as a single markdown file; full 4-layer pipeline also available via `wiki_capture_source` |
 | 🌐 **MCP Server** | Use with Claude Code, Cursor, Windsurf via stdio MCP transport |
-| 📝 **Obsidian-friendly** | Folder-qualified wikilinks, stable source-ID citations, compatible vault |
-| 🛡️ **Guardrails** | Blocks direct edits to raw sources and generated metadata |
+| 📝 **Obsidian-friendly** | Standard file-relative Markdown Concept links work in Obsidian and ordinary Markdown readers |
+| 🛡️ **Guardrails** | Blocks controlled direct canonical writes and edits to generated Reserved Documents |
 | 🔧 **Configurable PDF extraction** | MarkItDown timeout via `WIKI_MARKITDOWN_TIMEOUT_MS` env var |
 | 🧪 **38+ tests, CI, CodeQL** | TypeScript, Vitest, Biome, Codecov |
 
@@ -94,16 +100,16 @@ Das Ergebnis ist ein Wiki, das wächst, während du Quellen erfasst, Fragen stel
 
 | Tool | Description |
 |------|-------------|
-| `wiki_bootstrap` | Initialize a new wiki vault with config, templates, schema, and metadata |
-| `wiki_capture_source` | Capture a URL, local file, or pasted text into an immutable source packet |
+| `wiki_bootstrap` | Initialize a Canonical Knowledge Bundle and its Private Vault Layer |
+| `wiki_capture_source` | Capture a URL, local file, or pasted text as a Raw Source Packet and Source Concept |
 | `wiki_recall` | Search wiki for task-relevant pages — searches both personal (`~/.llm-wiki/`) and project (`.llm-wiki/`) vaults, deduplicated |
 | `wiki_retro` | Save atomic insights from completed tasks into the wiki |
-| `wiki_ingest` | Process uningested source packets into wiki pages (batch) |
+| `wiki_ingest` | Synthesize captured Source Concepts through controlled Bundle Mutations |
 | `wiki_ensure_page` | Resolve or safely create entity / concept / synthesis / analysis pages |
-| `wiki_search` | Search the generated wiki registry |
+| `wiki_search` | Search a fresh revision-bound Private Projection |
 | `wiki_lint` | Deterministic health checks (orphans, gaps, contradictions, auto-fix) |
 | `wiki_status` | Show counts, source states, and recent activity |
-| `wiki_rebuild_meta` | Force a full metadata rebuild (registry, backlinks, index, log) |
+| `wiki_rebuild_meta` | Rebuild revision-bound Private Projections |
 | `wiki_log_event` | Append a structured event to the wiki activity log |
 | `wiki_watch` | Print a `crontab` line for automatic wiki updates (daily / weekly / hourly) — does not install it |
 
@@ -189,13 +195,11 @@ Capture these notes into the wiki: ...pasted text...
 
 ### 3) Quelle integrieren
 
-1. Capture the source
-2. Read `.llm-wiki/wiki/sources/SRC-*.md`
-3. Update that source page
-4. Search for impacted canonical pages with `wiki_search`
-5. Create missing pages with `wiki_ensure_page`
-6. Update concept / entity / synthesis pages with citations
-7. Mark the integration with `wiki_log_event kind=integrate`
+1. Capture the source with `wiki_capture_source`
+2. Let `wiki_ingest` synthesize it through the controlled Source Capture lifecycle
+3. Search for impacted Concepts with `wiki_search`
+4. Create or replace Concepts only through controlled tools such as `wiki_ensure_page`
+5. Use standard Markdown links ending in `.md` for Concept links and citations
 
 ### 4) Wiki abfragen
 
@@ -220,13 +224,13 @@ my-wiki/
    ├─ templates/                 # Page templates
    ├─ raw/
    │  └─ sources/
-   │     └─ SRC-2026-05-11-001/
+   │     └─ <opaque-raw-source-id>/
    │        ├─ manifest.json
    │        ├─ original/           # Original artifact
    │        ├─ extracted.md        # Normalized text
    │        └─ attachments/
    ├─ wiki/
-   │  ├─ sources/                  # Source pages (what each source says)
+   │  ├─ sources/                  # Source Concepts (reader-visible synthesis)
    │  ├─ concepts/                 # Concepts and recurring ideas
    │  ├─ entities/                 # People, orgs, products, papers, systems
    │  ├─ syntheses/                # Cross-source theses and tensions
@@ -248,12 +252,12 @@ my-wiki/
 | Path | Owner | Rule |
 |------|-------|------|
 | `.llm-wiki/raw/**` | Extension tools | Immutable after capture |
-| `.llm-wiki/wiki/**` | Model + user | Editable knowledge pages |
+| `.llm-wiki/wiki/**` | Bundle Mutation + external editors | Canonical Knowledge Bundle; controlled direct writes are blocked |
 | `.llm-wiki/meta/registry.json` | Extension | Generated |
 | `.llm-wiki/meta/backlinks.json` | Extension | Generated |
-| `.llm-wiki/meta/index.md` | Extension | Generated |
+| `.llm-wiki/meta/index.md` | Extension | Private compatibility projection; not a Navigation Index authority |
 | `.llm-wiki/meta/events.jsonl` | Extension / tool | Append-only |
-| `.llm-wiki/meta/log.md` | Extension | Generated from events |
+| `.llm-wiki/meta/log.md` | Extension | Private activity projection; not the root Reserved Document |
 | `.llm-wiki/meta/lint-report.md` | Extension | Generated |
 | `.llm-wiki/WIKI_SCHEMA.md` | Human + explicit request | Operating manual |
 
@@ -264,18 +268,18 @@ my-wiki/
 ### Interne Navigation
 
 ```markdown
-[[concepts/retrieval-augmented-generation]]
-[[entities/openai|OpenAI]]
-[[syntheses/long-context-vs-rag]]
+[RAG](concepts/retrieval-augmented-generation.md)
+[OpenAI](entities/openai.md)
+[Long context vs. RAG](syntheses/long-context-vs-rag.md)
 ```
 
 ### Faktenzitate
 
 ```markdown
-[[sources/SRC-2026-04-04-001|SRC-2026-04-04-001]]
+[Source title](sources/source-title.md)
 ```
 
-Stable source-page IDs keep provenance stable even if titles change.
+Source Concepts carry stable opaque Raw Source Identifiers in project-namespaced metadata; canonical links target their current folder-qualified Concept paths.
 
 ---
 
@@ -291,16 +295,16 @@ The extension **blocks** direct tool-call edits to:
 - `.llm-wiki/meta/log.md`
 - `.llm-wiki/meta/lint-report.md`
 
-If the model directly edits `.llm-wiki/wiki/**` using Pi's built-in `write` or `edit` tools, the extension **automatically rebuilds** generated metadata at the end of the agent turn.
+Controlled Pi and MCP writes to `.llm-wiki/wiki/**` must use the shared Bundle Mutation seam. External human/tool edits are detected and require External Reconciliation; they are never silently treated as controlled commits.
 
 ---
 
 ## Quellpaket-Format
 
-Each captured source is stored as a structured packet:
+Each capture stores one immutable Raw Source Packet in the Private Vault Layer and associates it with one reader-visible Source Concept:
 
 ```
-.llm-wiki/raw/sources/SRC-YYYY-MM-DD-NNN/
+.llm-wiki/raw/sources/<opaque-raw-source-id>/
 ├─ manifest.json     # Capture metadata (title, URL, format, timestamp)
 ├─ original/         # Original artifact (preserved as-is)
 ├─ extracted.md      # Normalized text (PDF→md, XML→md, JSON→md, etc.)
@@ -323,7 +327,7 @@ The package ships a standalone MCP server exposing 5 wiki tools over stdio:
 | `wiki_search` | Full registry search |
 | `wiki_status` | Wiki stats (page counts, type breakdown) |
 | `wiki_retro` | Save atomic insights |
-| `wiki_capture_source` | Capture text as a source packet |
+| `wiki_capture_source` | Capture text as a Raw Source Packet and Source Concept |
 
 ### Verwendung
 
@@ -344,7 +348,7 @@ Set `WIKI_ROOT` to your wiki vault directory. If unset, the server auto-detects 
 The bundled `llm-wiki` skill teaches the model to:
 
 - ❌ Never edit raw sources directly
-- ❌ Never edit generated metadata files
+- ❌ Never treat Private Projections as canonical bundle content
 - ✅ Capture first, integrate second
 - ✅ Search before creating new canonical pages
 - ✅ Cite facts using source-page IDs
@@ -364,9 +368,9 @@ See the [Layered Vault Architecture](#layered-vault-architecture) section above 
 Each wiki vault has four layers with clear ownership:
 
 ```
-.llm-wiki/raw/sources/SRC-*/     # Immutable source packets (extension-owned)
-.llm-wiki/wiki/                   # Editable knowledge pages (you + LLM)
-.llm-wiki/meta/                   # Auto-generated registry, backlinks, index, log
+.llm-wiki/raw/sources/<opaque-id>/ # Immutable Raw Source Packets (private)
+.llm-wiki/wiki/                    # Canonical Knowledge Bundle
+.llm-wiki/meta/                    # Revision-bound Private Projections
 .llm-wiki/                        # Config and templates
 ```
 
